@@ -1,0 +1,65 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{json,yml,yaml,md,ts,tsx,js,jsx,css,html}]
+indent_size = 2
+
+[*.{csproj,props,targets}]
+indent_size = 2
+
+[*.cs]
+indent_size = 4
+
+# --- Language conventions -------------------------------------------------
+csharp_style_namespace_declarations = file_scoped:error
+csharp_using_directive_placement = outside_namespace:warning
+csharp_prefer_braces = true:warning
+csharp_style_var_for_built_in_types = false:silent
+csharp_style_var_when_type_is_apparent = true:silent
+csharp_style_expression_bodied_methods = when_on_single_line:silent
+csharp_style_prefer_primary_constructors = true:suggestion
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+dotnet_style_readonly_field = true:warning
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# --- Naming: private fields are _camelCase --------------------------------
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_prefix
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_prefix.required_prefix = _
+dotnet_naming_style.underscore_prefix.capitalization = camel_case
+
+# --- Analyzer severities --------------------------------------------------
+# CA1848 (LoggerMessage delegates): not worth the ceremony outside measured hot paths.
+dotnet_diagnostic.CA1848.severity = none
+# CA1812: internal types instantiated only by DI look "uninstantiated" to the analyzer.
+dotnet_diagnostic.CA1812.severity = none
+# CA1515: this solution's app types are intentionally internal-by-default already.
+dotnet_diagnostic.CA1515.severity = none
+# CA1716: flags identifiers that collide with VB.NET keywords ('Shared', 'Error').
+# This solution is C#-only and the names are dictated by the spec (Shared.Kernel, Error).
+dotnet_diagnostic.CA1716.severity = none
+# CA1711: reserves the 'EventHandler' suffix for the BCL delegate convention.
+# IIntegrationEventHandler<T> is the spec's own name for a module event consumer (§4.3).
+dotnet_diagnostic.CA1711.severity = none
+
+[*.{cs,vb}]
+# Async methods must take a CancellationToken (spec §6.7).
+dotnet_diagnostic.CA2016.severity = error
+# No .Result / .Wait() (spec §6.7).
+dotnet_diagnostic.CA2007.severity = none
+
+# Tests: relax rules that fight xUnit conventions.
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1861.severity = none

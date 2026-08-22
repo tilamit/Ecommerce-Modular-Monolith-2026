@@ -1,0 +1,33 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Api/">
+    <Project Path="src/Api/ShopHub.Api/ShopHub.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/" />
+  <Folder Name="/src/Modules/Auditing/">
+    <Project Path="src/Modules/Auditing/ShopHub.Modules.Auditing.Contracts/ShopHub.Modules.Auditing.Contracts.csproj" />
+    <Project Path="src/Modules/Auditing/ShopHub.Modules.Auditing/ShopHub.Modules.Auditing.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Catalog/">
+    <Project Path="src/Modules/Catalog/ShopHub.Modules.Catalog.Contracts/ShopHub.Modules.Catalog.Contracts.csproj" />
+    <Project Path="src/Modules/Catalog/ShopHub.Modules.Catalog/ShopHub.Modules.Catalog.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Identity/">
+    <Project Path="src/Modules/Identity/ShopHub.Modules.Identity.Contracts/ShopHub.Modules.Identity.Contracts.csproj" />
+    <Project Path="src/Modules/Identity/ShopHub.Modules.Identity/ShopHub.Modules.Identity.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Ordering/">
+    <Project Path="src/Modules/Ordering/ShopHub.Modules.Ordering.Contracts/ShopHub.Modules.Ordering.Contracts.csproj" />
+    <Project Path="src/Modules/Ordering/ShopHub.Modules.Ordering/ShopHub.Modules.Ordering.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/ShopHub.Shared.Contracts/ShopHub.Shared.Contracts.csproj" />
+    <Project Path="src/Shared/ShopHub.Shared.Infrastructure/ShopHub.Shared.Infrastructure.csproj" />
+    <Project Path="src/Shared/ShopHub.Shared.Kernel/ShopHub.Shared.Kernel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ShopHub.ArchitectureTests/ShopHub.ArchitectureTests.csproj" />
+    <Project Path="tests/ShopHub.IntegrationTests/ShopHub.IntegrationTests.csproj" />
+    <Project Path="tests/ShopHub.UnitTests/ShopHub.UnitTests.csproj" />
+  </Folder>
+</Solution>

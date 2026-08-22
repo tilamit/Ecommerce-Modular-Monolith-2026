@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Integration events + enums shared across module boundaries (spec §4.3). -->
+
+</Project>

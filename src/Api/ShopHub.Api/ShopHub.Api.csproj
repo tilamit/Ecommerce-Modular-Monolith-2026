@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    The only executable in the solution (spec §5).
+    References every *.Module project for registration only - module internals are
+    'internal', so there is nothing else here to reach for.
+  -->
+
+  <PropertyGroup>
+    <UserSecretsId>shophub-api-2f6b1c9e</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
+    <PackageReference Include="AspNetCore.HealthChecks.SqlServer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\ShopHub.Shared.Infrastructure\ShopHub.Shared.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Identity\ShopHub.Modules.Identity\ShopHub.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\Modules\Catalog\ShopHub.Modules.Catalog\ShopHub.Modules.Catalog.csproj" />
+    <ProjectReference Include="..\..\Modules\Ordering\ShopHub.Modules.Ordering\ShopHub.Modules.Ordering.csproj" />
+    <ProjectReference Include="..\..\Modules\Auditing\ShopHub.Modules.Auditing\ShopHub.Modules.Auditing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShopHub.IntegrationTests" />
+    <InternalsVisibleTo Include="ShopHub.ArchitectureTests" />
+  </ItemGroup>
+
+</Project>

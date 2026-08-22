@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Spec §4.1: Shared.Kernel references nothing but the BCL.
+    Enforced by ArchitectureTests.SharedKernel_DependsOnNoShopHubAssembly.
+    Do not add a ProjectReference or PackageReference here.
+  -->
+
+</Project>

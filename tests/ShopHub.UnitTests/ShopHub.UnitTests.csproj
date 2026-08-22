@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Domain behaviour and handlers with fakes (spec §12). No database, no host. -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Shared\ShopHub.Shared.Kernel\ShopHub.Shared.Kernel.csproj" />
+    <ProjectReference Include="..\..\src\Shared\ShopHub.Shared.Contracts\ShopHub.Shared.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Shared\ShopHub.Shared.Infrastructure\ShopHub.Shared.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

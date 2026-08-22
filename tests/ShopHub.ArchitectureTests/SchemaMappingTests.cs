@@ -114,7 +114,14 @@ public sealed class SchemaMappingTests
                             && !m.IsGenericMethod)
                 .Invoke(null, [builder, UnusedConnectionString, null]);
 
-            var options = builderType.GetProperty(nameof(DbContextOptionsBuilder.Options))!.GetValue(builder);
+            // DeclaredOnly: DbContextOptionsBuilder<TContext> hides the base class's
+            // Options property with a more-derived one, so an unqualified lookup finds
+            // both and throws AmbiguousMatchException.
+            var options = builderType
+                .GetProperty(
+                    nameof(DbContextOptionsBuilder.Options),
+                    BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                .GetValue(builder);
 
             var constructor = contextType.GetConstructor(
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,

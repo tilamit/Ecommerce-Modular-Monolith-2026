@@ -63,3 +63,13 @@ dotnet_diagnostic.CA2007.severity = none
 [tests/**/*.cs]
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1861.severity = none
+
+# EF Core generated migrations. These are machine-written and never hand-edited, so the
+# style and analyzer rules that apply to authored code would only ever produce noise -
+# and under TreatWarningsAsErrors they break the build on `dotnet ef migrations add`.
+[**/Migrations/*.cs]
+generated_code = true
+dotnet_analyzer_diagnostic.severity = none
+dotnet_diagnostic.IDE0161.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1062.severity = none

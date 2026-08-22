@@ -50,8 +50,7 @@ public sealed class VisibilityTests
     [MemberData(nameof(ModuleCatalog.ModuleNames), MemberType = typeof(ModuleCatalog))]
     public void OnlyTheModuleRegistrationType_IsPublic(string module)
     {
-        var exported = ModuleCatalog.Implementations[module]
-            .GetExportedTypes()
+        var exported = ModuleCatalog.AuthoredPublicTypes(module)
             .Select(t => t.FullName ?? t.Name)
             .ToArray();
 

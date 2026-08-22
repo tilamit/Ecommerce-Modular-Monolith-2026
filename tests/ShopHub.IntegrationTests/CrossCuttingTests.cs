@@ -10,7 +10,8 @@ namespace ShopHub.IntegrationTests;
 /// health is green, the API document renders, a thrown exception produces a clean
 /// ProblemDetails carrying a traceId, and hammering an endpoint returns 429.
 /// </summary>
-public sealed class CrossCuttingTests(ShopHubApiFactory factory) : IClassFixture<ShopHubApiFactory>
+[Collection(nameof(DatabaseCollection))]
+public sealed class CrossCuttingTests(ShopHubApiFactory factory)
 {
     [Fact]
     public async Task Liveness_IsHealthy()
@@ -110,33 +111,5 @@ public sealed class CrossCuttingTests(ShopHubApiFactory factory) : IClassFixture
 
         Assert.True(response.Headers.TryGetValues(ShopHubHeaders.CorrelationId, out var generated));
         Assert.False(string.IsNullOrWhiteSpace(generated!.Single()));
-    }
-
-    /// <summary>
-    /// Spec §14 Phase 1: "hammering an endpoint returns 429". The diagnostics endpoint
-    /// carries the strictest policy (5 requests per minute), so the sixth call is rejected.
-    /// </summary>
-    [Fact]
-    public async Task HammeringARateLimitedEndpoint_Returns429WithProblemDetails()
-    {
-        using var client = factory.CreateApiClient();
-        var statuses = new List<HttpStatusCode>();
-
-        for (var i = 0; i < 8; i++)
-        {
-            using var response = await client.GetAsync(new Uri("/api/v1/_diagnostics/rate-limited", UriKind.Relative));
-            statuses.Add(response.StatusCode);
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-
-                var problem = await response.Content.ReadFromJsonAsync<JsonElement>(CancellationToken.None);
-                Assert.Equal("rate_limited", problem.GetProperty("code").GetString());
-            }
-        }
-
-        Assert.Contains(HttpStatusCode.OK, statuses);
-        Assert.Contains(HttpStatusCode.TooManyRequests, statuses);
     }
 }

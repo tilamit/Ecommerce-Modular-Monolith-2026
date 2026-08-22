@@ -125,6 +125,9 @@ internal sealed class GlobalExceptionHandler(
                 "concurrency_conflict",
                 null),
 
+            UnauthorizedException unauthorized => (
+                StatusCodes.Status401Unauthorized, "Authentication is required.", unauthorized.Code, null),
+
             ForbiddenException forbidden => (
                 StatusCodes.Status403Forbidden, "You do not have access to this resource.", forbidden.Code, null),
 

@@ -19,6 +19,14 @@
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
     <PackageReference Include="AspNetCore.HealthChecks.SqlServer" />
+    <!--
+      Design-time only. `dotnet ef` needs it on the STARTUP project to build the host and
+      resolve each module's DbContext from DI. PrivateAssets keeps it out of the output.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

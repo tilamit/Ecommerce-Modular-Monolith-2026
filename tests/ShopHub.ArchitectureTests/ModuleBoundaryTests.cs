@@ -119,8 +119,7 @@ public sealed class ModuleBoundaryTests
         {
             Assert.Contains(ModuleCatalog.ImplementationNamespace(module), referenced, StringComparer.Ordinal);
 
-            var publicTypes = ModuleCatalog.Implementations[module]
-                .GetExportedTypes()
+            var publicTypes = ModuleCatalog.AuthoredPublicTypes(module)
                 .Select(t => t.FullName)
                 .ToArray();
 

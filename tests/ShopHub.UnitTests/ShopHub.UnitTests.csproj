@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\src\Shared\ShopHub.Shared.Kernel\ShopHub.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\src\Shared\ShopHub.Shared.Contracts\ShopHub.Shared.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Shared\ShopHub.Shared.Infrastructure\ShopHub.Shared.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Identity\ShopHub.Modules.Identity\ShopHub.Modules.Identity.csproj" />
   </ItemGroup>
 
   <ItemGroup>

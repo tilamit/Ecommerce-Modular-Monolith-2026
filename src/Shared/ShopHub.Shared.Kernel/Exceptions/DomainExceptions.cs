@@ -49,6 +49,28 @@ public sealed class ConflictException : ShopHubException
     }
 }
 
+/// <summary>
+/// 401. The caller is not authenticated, or their session can no longer be renewed.
+/// <para>
+/// Distinct from <see cref="ForbiddenException"/> on purpose: 401 means "authenticate and
+/// try again", 403 means "you are authenticated and still may not". Spec §7.3 requires the
+/// refresh endpoint to answer 401 with a distinguishable code so the SPA redirects to login
+/// instead of looping on refresh.
+/// </para>
+/// </summary>
+public sealed class UnauthorizedException : ShopHubException
+{
+    public UnauthorizedException(string message)
+        : base("unauthorized", message)
+    {
+    }
+
+    public UnauthorizedException(string code, string message)
+        : base(code, message)
+    {
+    }
+}
+
 /// <summary>403. The caller is authenticated but lacks the required permission or ownership.</summary>
 public sealed class ForbiddenException : ShopHubException
 {

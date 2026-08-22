@@ -42,6 +42,22 @@ public static class ModuleCatalog
     public static string ContractsNamespace(string module) => $"ShopHub.Modules.{module}.Contracts";
 
     /// <summary>
+    /// Public types a module is allowed to expose beyond its IModule implementation.
+    /// <para>
+    /// EF Core generates migration classes as <c>public</c> and regenerates them on every
+    /// <c>migrations add</c>, so hand-editing them to <c>internal</c> would not survive.
+    /// They are exempt because they carry no module API: a migration exposes schema
+    /// operations to the EF tooling, not behaviour another module could couple to.
+    /// </para>
+    /// </summary>
+    public static bool IsGeneratedMigrationType(Type type) =>
+        type.Namespace?.Contains(".Persistence.Migrations", StringComparison.Ordinal) == true;
+
+    /// <summary>A module's authored public types - what the boundary rules actually care about.</summary>
+    public static IReadOnlyList<Type> AuthoredPublicTypes(string module) =>
+        [.. Implementations[module].GetExportedTypes().Where(t => !IsGeneratedMigrationType(t))];
+
+    /// <summary>
     /// Every ordered pair of distinct modules. Drives the symmetric isolation cases
     /// required by spec §4.4 rule 1 without hand-writing twelve near-identical tests.
     /// </summary>

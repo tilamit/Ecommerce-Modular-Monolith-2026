@@ -11,6 +11,7 @@ using ShopHub.Modules.Identity;
 using ShopHub.Modules.Ordering;
 using ShopHub.Shared.Infrastructure;
 using ShopHub.Shared.Infrastructure.Modules;
+using ShopHub.Shared.Infrastructure.Security;
 using ShopHub.Shared.Kernel.Exceptions;
 
 // Bootstrap logger first, so a failure in configuration binding below is still logged.
@@ -34,6 +35,7 @@ try
     ];
 
     builder.Services.AddSharedInfrastructure(builder.Configuration);
+    builder.Services.AddShopHubAuthentication(builder.Configuration);
     builder.Services.AddApiServices(builder.Configuration);
     builder.Services.AddForwardedHeaders(builder.Configuration);
 
@@ -60,6 +62,10 @@ try
     app.UseResponseCompression();
     app.UseCors(ApiServiceExtensions.SpaCorsPolicy);
     app.UseRateLimiter();
+
+    // Authentication before authorization, both after CORS so a preflight is not challenged.
+    app.UseAuthentication();
+    app.UseAuthorization();
     app.UseOutputCache();
 
     app.MapHealthEndpoints();
@@ -79,6 +85,10 @@ try
     {
         module.MapEndpoints(app);
     }
+
+    // Applies migrations and seeds, Development only. Runs before the first request so a
+    // broken migration surfaces at startup rather than as a 500 on someone's first call.
+    await app.InitializeModulesAsync();
 
     Log.Information(
         "ShopHub API starting in {Environment} with modules: {Modules}",

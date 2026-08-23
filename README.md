@@ -8,11 +8,11 @@ The point of this repo is the boundaries. A monolith with folders named "Modules
 reference each other is a layered monolith with extra steps; the architecture tests in
 `tests/ShopHub.ArchitectureTests` are what make the difference non-negotiable.
 
-**Current state: Phases 0-6 complete - the backend is done.** All four modules are built and
-verified: Identity (auth, users, roles, access management), Catalog (categories, products,
-offers, storefront browse), Ordering (carts, merge, guest and registered checkout, orders)
-and Auditing (append-only trail with background capture), plus the cross-module dashboards.
-The React frontend is Phases 7-10. See [`docs/PROGRESS.md`](docs/PROGRESS.md).
+**Current state: Phases 0-8 complete.** The backend is finished - Identity, Catalog,
+Ordering and Auditing, plus the cross-module dashboards. The React storefront is built and
+running against it: browse, filter, typeahead, cart with the one-hour localStorage expiry,
+and guest or registered checkout. The admin and customer apps are Phases 9-10. See
+[`docs/PROGRESS.md`](docs/PROGRESS.md).
 
 ---
 
@@ -22,7 +22,7 @@ The React frontend is Phases 7-10. See [`docs/PROGRESS.md`](docs/PROGRESS.md).
 |---|---|---|
 | .NET SDK | 10.0.301 | `dotnet --list-sdks` |
 | SQL Server LocalDB | `MSSQLLocalDB` | `sqllocaldb info` |
-| Node.js / npm | 26.4.0 / 11.17.0 | `node -v` - needed from Phase 7 |
+| Node.js / npm | 26.4.0 / 11.17.0 | `node -v` |
 | git | 2.38.1 | `git --version` |
 
 The SDK version is pinned in `global.json` with `rollForward: latestFeature`, so a newer
@@ -100,7 +100,24 @@ dotnet run --project src/Api/ShopHub.Api
 
 ### Run the frontend
 
-Not yet - Phase 7.
+With the API already running, in a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173
+```
+
+Vite proxies `/api` to `http://localhost:5069`, so the SPA is same-site with the API and the
+refresh cookie travels normally.
+
+| Script | What |
+|---|---|
+| `npm run dev` | Dev server with HMR |
+| `npm run build` | Type-check and production build |
+| `npm run test` | Vitest - 30 tests |
+| `npm run lint` | oxlint |
+| `npm run typecheck` | `tsc -b` across app and test projects |
 
 ---
 
@@ -122,8 +139,18 @@ ShopHub.slnx
 │  │  └─ ShopHub.Shared.Infrastructure/ # §6 cross-cutting concerns, IModule, IEventBus
 │  └─ Modules/{Identity,Catalog,Ordering,Auditing}/
 │     └─ ShopHub.Modules.X/ + ShopHub.Modules.X.Contracts/
-└─ tests/{ArchitectureTests,UnitTests,IntegrationTests}/
+├─ tests/{ArchitectureTests,UnitTests,IntegrationTests}/
+└─ frontend/                    # Vite + React 19 + TypeScript, Tailwind v4
+   └─ src/
+      ├─ app/                   # router, providers, layouts, guards
+      ├─ features/              # auth, catalog, cart, checkout - each with an index.ts
+      └─ shared/                # api client, UI kit, hooks, formatters
 ```
+
+The frontend mirrors the backend's module boundaries deliberately: a feature imports from
+`shared/` and from its own folder, and reaches another feature only through that feature's
+`index.ts` - the same discipline as a backend `Contracts` project. `boundaries.test.ts`
+enforces it.
 
 ---
 

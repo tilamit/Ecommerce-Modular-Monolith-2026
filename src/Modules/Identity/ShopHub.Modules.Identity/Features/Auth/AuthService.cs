@@ -330,8 +330,8 @@ internal sealed class AuthService(
             refreshHash,
             familyId ?? SequentialGuid.New(),
             now,
-            TimeSpan.FromDays(_jwt.RefreshTokenDays),
-            absoluteExpiryUtc ?? now.AddDays(_jwt.RefreshTokenAbsoluteCapDays),
+            _jwt.RefreshTokenLifetime,
+            absoluteExpiryUtc ?? now.Add(_jwt.RefreshTokenAbsoluteCap),
             ipAddress,
             userAgent);
 

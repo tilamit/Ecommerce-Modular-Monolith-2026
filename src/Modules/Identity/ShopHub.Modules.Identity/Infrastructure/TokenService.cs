@@ -34,7 +34,7 @@ internal sealed class TokenService(IOptions<JwtOptions> options, IClock clock) :
     public (string Token, DateTime ExpiresUtc) CreateAccessToken(User user, IReadOnlyCollection<string> roleNames)
     {
         var now = clock.UtcNow;
-        var expiresUtc = now.AddMinutes(_options.AccessTokenMinutes);
+        var expiresUtc = now.Add(_options.AccessTokenLifetime);
 
         var claims = new List<Claim>
         {

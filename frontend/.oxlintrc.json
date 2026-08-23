@@ -1,0 +1,74 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn"
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "rules": {
+    "no-console": [
+      "error",
+      {
+        "allow": [
+          "warn",
+          "error"
+        ]
+      }
+    ],
+    "eqeqeq": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          "@/features/*/api",
+          "@/features/*/api/*",
+          "@/features/*/hooks",
+          "@/features/*/hooks/*",
+          "@/features/*/components",
+          "@/features/*/components/*",
+          "@/features/*/pages",
+          "@/features/*/pages/*",
+          "@/features/*/store",
+          "@/features/*/store/*",
+          "@/features/*/lib",
+          "@/features/*/lib/*",
+          "@/features/*/localCart",
+          "@/features/*/localCart/*",
+          "@/features/*/cartStore",
+          "@/features/*/cartStore/*"
+        ]
+      }
+    ],
+    "no-underscore-dangle": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/features/*/index.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "src/test/**"
+      ],
+      "rules": {
+        "no-restricted-imports": "off",
+        "no-console": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "dist",
+    "coverage",
+    "node_modules"
+  ]
+}

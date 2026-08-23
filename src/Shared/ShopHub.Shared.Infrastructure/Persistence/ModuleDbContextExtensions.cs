@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ShopHub.Shared.Infrastructure.Auditing;
+using ShopHub.Shared.Kernel.Abstractions;
 
 namespace ShopHub.Shared.Infrastructure.Persistence;
 
@@ -56,6 +59,17 @@ public static class ModuleDbContextExtensions
             options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 
             options.AddInterceptors(serviceProvider.GetRequiredService<AuditableEntityInterceptor>());
+
+            // The audit-trail interceptor is registered on every module's context
+            // (spec §6.6). It is constructed here rather than resolved, because it needs
+            // this module's name - the schema doubles as the trail's Module column.
+            options.AddInterceptors(new AuditSaveChangesInterceptor(
+                serviceProvider.GetRequiredService<IAuditQueue>(),
+                serviceProvider.GetRequiredService<IClock>(),
+                serviceProvider.GetRequiredService<ICurrentUser>(),
+                serviceProvider.GetRequiredService<IAuditContext>(),
+                schema,
+                serviceProvider.GetRequiredService<ILogger<AuditSaveChangesInterceptor>>()));
         });
 
         return services;

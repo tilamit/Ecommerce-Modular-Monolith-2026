@@ -2,9 +2,12 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Identity.Domain;
 using ShopHub.Modules.Identity.Infrastructure;
 using ShopHub.Modules.Identity.Persistence;
+using ShopHub.Shared.Contracts.Events;
+using ShopHub.Shared.Infrastructure.Events;
 using ShopHub.Shared.Kernel.Abstractions;
 using ShopHub.Shared.Kernel.Entities;
 using ShopHub.Shared.Kernel.Exceptions;
@@ -26,6 +29,8 @@ internal sealed class AuthService(
     IPermissionService permissions,
     IMenuService menus,
     IClock clock,
+    IEventBus eventBus,
+    IAuditWriter audit,
     IOptions<JwtOptions> jwtOptions,
     ILogger<AuthService> logger)
 {
@@ -77,6 +82,18 @@ internal sealed class AuthService(
             logger.LogInformation("Registered user {UserId}.", user.Id);
         }
 
+        // Published after the transaction commits (spec §4.3). Ordering consumes this to
+        // link any prior guest-checkout history to the new account - the only moment
+        // linking is safe, because the address is now demonstrably controlled (ADR-001).
+        await eventBus.PublishAsync(
+            new UserRegisteredIntegrationEvent(
+                SequentialGuid.New(),
+                clock.UtcNow,
+                user.Id,
+                user.Email,
+                user.FullName),
+            cancellationToken);
+
         return await IssueSessionAsync(user, familyId: null, ipAddress, userAgent, cancellationToken);
     }
 
@@ -100,6 +117,11 @@ internal sealed class AuthService(
         {
             // Burn equivalent CPU so an unknown email is not faster than a wrong password.
             passwords.VerifyDummy(request.Password);
+
+            // Recorded even though there is no account: repeated failures against
+            // non-existent emails are what account enumeration looks like from the outside.
+            WriteAuthAudit(AuditAction.LoginFailed, userId: null, request.Email);
+
             throw new ForbiddenException("invalid_credentials", InvalidCredentialsMessage);
         }
 
@@ -119,6 +141,8 @@ internal sealed class AuthService(
             await db.SaveChangesAsync(cancellationToken);
 
             logger.LogWarning("Failed sign-in for user {UserId}.", user.Id);
+            WriteAuthAudit(AuditAction.LoginFailed, user.Id, user.Email);
+
             throw new ForbiddenException("invalid_credentials", InvalidCredentialsMessage);
         }
 
@@ -135,6 +159,8 @@ internal sealed class AuthService(
 
         user.RegisterSuccessfulLogin(now);
         await db.SaveChangesAsync(cancellationToken);
+
+        WriteAuthAudit(AuditAction.Login, user.Id, user.Email);
 
         return await IssueSessionAsync(user, familyId: null, ipAddress, userAgent, cancellationToken);
     }
@@ -175,6 +201,18 @@ internal sealed class AuthService(
                 "Refresh token reuse detected for user {UserId}; revoked token family {FamilyId}.",
                 existing.UserId,
                 existing.FamilyId);
+
+            // Spec §7.2 asks for an audit entry here specifically: this is the signature of
+            // a stolen token, and it is the one event an operator most needs to find later.
+            audit.Write(new AuditEntryDto
+            {
+                Action = AuditAction.PermissionChange,
+                Module = "identity",
+                EntityName = nameof(RefreshToken),
+                EntityId = existing.Id.ToString(),
+                UserId = existing.UserId,
+                NewValues = $"{{\"reuseDetected\":true,\"familyId\":\"{existing.FamilyId}\"}}",
+            });
 
             throw new UnauthorizedException(RefreshExpiredCode, "Your session has expired. Please sign in again.");
         }
@@ -227,6 +265,8 @@ internal sealed class AuthService(
 
         existing.Revoke(clock.UtcNow, ipAddress, RevocationReasons.Logout);
         await db.SaveChangesAsync(cancellationToken);
+
+        WriteAuthAudit(AuditAction.Logout, existing.UserId, userName: null);
     }
 
     /// <summary>Revokes every active token for a user (spec §7.3 <c>/logout-all</c>).</summary>
@@ -244,6 +284,10 @@ internal sealed class AuthService(
                     .SetProperty(t => t.RevokedByIp, ipAddress)
                     .SetProperty(t => t.RevokedReason, RevocationReasons.LogoutAll),
                 cancellationToken);
+
+        // ExecuteUpdateAsync bypasses the change tracker and therefore the audit
+        // interceptor (spec §6.7), so the entry is written explicitly here.
+        WriteAuthAudit(AuditAction.Logout, userId, userName: null);
     }
 
     internal async Task<MeResponse> GetMeAsync(Guid userId, CancellationToken cancellationToken)
@@ -340,6 +384,21 @@ internal sealed class AuthService(
                     .SetProperty(t => t.RevokedReason, reason),
                 cancellationToken);
     }
+
+    /// <summary>
+    /// Records an authentication event through Auditing's Contracts. These are non-EF
+    /// events, so no interceptor could observe them (spec §9.4).
+    /// </summary>
+    private void WriteAuthAudit(AuditAction action, Guid? userId, string? userName) =>
+        audit.Write(new AuditEntryDto
+        {
+            Action = action,
+            Module = "identity",
+            EntityName = "Auth",
+            EntityId = userId?.ToString(),
+            UserId = userId,
+            UserName = userName,
+        });
 
     private async Task<IReadOnlyList<string>> RoleNamesAsync(User user, CancellationToken cancellationToken)
     {

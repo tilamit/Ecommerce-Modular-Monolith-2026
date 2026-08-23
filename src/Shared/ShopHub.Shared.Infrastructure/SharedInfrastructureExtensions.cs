@@ -33,6 +33,10 @@ public static class SharedInfrastructureExtensions
         services.AddScoped<IAuditContext, RequestAuditContext>();
         services.AddSingleton<IEventBus, InProcessEventBus>();
 
+        // Singleton: the queue spans requests, bridging the per-request interceptor to the
+        // single background writer that drains it (spec §6.6).
+        services.AddSingleton<Auditing.IAuditQueue, Auditing.AuditQueue>();
+
         services.AddShopHubProblemDetails();
         services.AddShopHubCaching(configuration);
         services.AddShopHubRateLimiting(configuration);

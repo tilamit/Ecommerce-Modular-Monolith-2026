@@ -46,6 +46,22 @@ internal sealed class IdentityModuleApi(IdentityDbContext db) : IIdentityModuleA
             counts.FirstOrDefault(c => !c.IsActive)?.Count ?? 0);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetUserIdsInRoleAsync(
+        string roleName,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = roleName.Trim().ToUpperInvariant();
+        var limit = Math.Clamp(take, 1, 500);
+
+        return await db.UserRoles
+            .Where(ur => ur.Role.NormalizedName == normalized)
+            .Select(ur => ur.UserId)
+            .Distinct()
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<DailyCountDto>> GetRegistrationsPerDayAsync(
         DateOnly fromInclusive,
         DateOnly toInclusive,

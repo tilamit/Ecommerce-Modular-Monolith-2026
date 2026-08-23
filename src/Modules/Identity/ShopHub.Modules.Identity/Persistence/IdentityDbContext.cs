@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ShopHub.Shared.Infrastructure.Persistence;
 using ShopHub.Modules.Identity.Domain;
 
 namespace ShopHub.Modules.Identity.Persistence;
@@ -38,6 +39,9 @@ internal sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> opti
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
         modelBuilder.HasDefaultSchema(Schema);
+        // Spec A5: the application generates v7 GUIDs, so EF must not infer entity state
+        // from the key value (see ModelBuilderExtensions for the failure mode this avoids).
+        modelBuilder.UseApplicationGeneratedGuidKeys();
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(IdentityDbContext).Assembly);
 
         base.OnModelCreating(modelBuilder);

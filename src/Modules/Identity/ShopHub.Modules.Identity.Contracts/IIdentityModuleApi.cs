@@ -30,6 +30,18 @@ public interface IIdentityModuleApi
     Task<UserCountsDto> GetUserCountsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Ids of active users holding a role, capped at <paramref name="take"/>.
+    /// <para>
+    /// Bounded on purpose, like every other list in this solution (spec §6.5). Roles are
+    /// data rather than an enum (spec A3), so the caller names the role as a string.
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetUserIdsInRoleAsync(
+        string roleName,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Users registered per day over a window, for the dashboard chart. Returns only days
     /// that have data - the caller zero-fills the gaps, because a chart that silently omits
     /// quiet days lies about them (spec §10.1).

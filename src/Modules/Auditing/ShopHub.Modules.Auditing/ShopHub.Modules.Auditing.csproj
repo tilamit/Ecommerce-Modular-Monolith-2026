@@ -16,6 +16,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <!-- Design-time only: required by `dotnet ef migrations`, not shipped at runtime. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShopHub.UnitTests" />
+    <InternalsVisibleTo Include="ShopHub.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\Shared\ShopHub.Shared.Kernel\ShopHub.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\..\Shared\ShopHub.Shared.Contracts\ShopHub.Shared.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Shared\ShopHub.Shared.Infrastructure\ShopHub.Shared.Infrastructure.csproj" />

@@ -44,6 +44,17 @@ public interface ICatalogModuleApi
 
     /// <summary>Active product and category counts, for the admin dashboard (spec §10.1).</summary>
     Task<CatalogCountsDto> GetActiveCountsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ids of active products, capped at <paramref name="take"/>.
+    /// <para>
+    /// Bounded on purpose: no Contracts method returns an unbounded collection, for the same
+    /// reason no endpoint does (spec §6.5). Exists because a caller that needs to reference
+    /// products has no other way to discover them - <c>catalog.Products</c> is unreachable
+    /// from outside this module.
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetActiveProductIdsAsync(int take, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Product facts as of now. Snapshot these; do not hold a reference and re-read later.</summary>

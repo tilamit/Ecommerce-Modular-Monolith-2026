@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\Shared\ShopHub.Shared.Infrastructure\ShopHub.Shared.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Identity\ShopHub.Modules.Identity\ShopHub.Modules.Identity.csproj" />
     <ProjectReference Include="..\..\src\Modules\Catalog\ShopHub.Modules.Catalog\ShopHub.Modules.Catalog.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Ordering\ShopHub.Modules.Ordering\ShopHub.Modules.Ordering.csproj" />
   </ItemGroup>
 
   <ItemGroup>

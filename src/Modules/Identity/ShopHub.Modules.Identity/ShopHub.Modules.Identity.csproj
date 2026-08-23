@@ -36,6 +36,10 @@
     <ProjectReference Include="..\..\..\Shared\ShopHub.Shared.Contracts\ShopHub.Shared.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Shared\ShopHub.Shared.Infrastructure\ShopHub.Shared.Infrastructure.csproj" />
     <ProjectReference Include="..\ShopHub.Modules.Identity.Contracts\ShopHub.Modules.Identity.Contracts.csproj" />
+
+    <!-- Other modules' Contracts only (spec §4.1): login and logout are non-EF events, so
+         they are recorded through Auditing's IAuditWriter rather than by the interceptor. -->
+    <ProjectReference Include="..\..\Auditing\ShopHub.Modules.Auditing.Contracts\ShopHub.Modules.Auditing.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

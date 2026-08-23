@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 using Serilog;
+using ShopHub.Api.Dashboards;
 using ShopHub.Api.Extensions;
 using ShopHub.Modules.Auditing;
 using ShopHub.Modules.Catalog;
@@ -37,6 +38,7 @@ try
     builder.Services.AddSharedInfrastructure(builder.Configuration);
     builder.Services.AddShopHubAuthentication(builder.Configuration);
     builder.Services.AddApiServices(builder.Configuration);
+    builder.Services.AddScoped<DashboardService>();
     builder.Services.AddForwardedHeaders(builder.Configuration);
 
     foreach (var module in modules)
@@ -85,6 +87,10 @@ try
     {
         module.MapEndpoints(app);
     }
+
+    // Cross-module read composition (spec §10). Lives in the host because it spans
+    // modules - and can only reach them through their Contracts.
+    app.MapDashboardEndpoints();
 
     // Applies migrations and seeds, Development only. Runs before the first request so a
     // broken migration surfaces at startup rather than as a 500 on someone's first call.

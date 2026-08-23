@@ -27,7 +27,7 @@ public sealed class SchemaMappingTests
     [MemberData(nameof(ModuleCatalog.ModuleNames), MemberType = typeof(ModuleCatalog))]
     public void EveryEntity_MapsToItsOwnModuleSchema(string module)
     {
-        var expectedSchema = module.ToLowerInvariant();
+        var expectedSchema = ModuleCatalog.Schemas[module];
         var violations = new List<string>();
 
         foreach (var context in CreateModuleDbContexts(module))

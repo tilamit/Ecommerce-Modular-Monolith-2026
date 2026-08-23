@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ShopHub.Shared.Infrastructure.Persistence;
 using ShopHub.Modules.Catalog.Domain;
 
 namespace ShopHub.Modules.Catalog.Persistence;
@@ -29,6 +30,9 @@ internal sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> option
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
         modelBuilder.HasDefaultSchema(Schema);
+        // Spec A5: the application generates v7 GUIDs, so EF must not infer entity state
+        // from the key value (see ModelBuilderExtensions for the failure mode this avoids).
+        modelBuilder.UseApplicationGeneratedGuidKeys();
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CatalogDbContext).Assembly);
 
         base.OnModelCreating(modelBuilder);

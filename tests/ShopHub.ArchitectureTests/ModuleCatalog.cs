@@ -35,6 +35,23 @@ public static class ModuleCatalog
             ["Auditing"] = Auditing,
         };
 
+    /// <summary>
+    /// The SQL schema each module owns (spec §4.2).
+    /// <para>
+    /// Not simply the lower-cased module name: the <c>Auditing</c> module owns the
+    /// <c>audit</c> schema, exactly as the spec names it. Deriving the schema from the
+    /// module name would have quietly asserted the wrong thing.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> Schemas { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Identity"] = "identity",
+            ["Catalog"] = "catalog",
+            ["Ordering"] = "ordering",
+            ["Auditing"] = "audit",
+        };
+
     /// <summary>Root namespace of a module's implementation assembly.</summary>
     public static string ImplementationNamespace(string module) => $"ShopHub.Modules.{module}";
 

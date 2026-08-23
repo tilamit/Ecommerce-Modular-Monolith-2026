@@ -144,6 +144,19 @@ internal sealed class CatalogModuleApi(CatalogDbContext db, ICatalogCacheInvalid
         await cache.InvalidateProductsAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetActiveProductIdsAsync(int take, CancellationToken cancellationToken = default)
+    {
+        // Clamped, so a caller cannot ask for the whole table by passing int.MaxValue.
+        var limit = Math.Clamp(take, 1, 500);
+
+        return await db.Products
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Id)
+            .Take(limit)
+            .Select(p => p.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<CatalogCountsDto> GetActiveCountsAsync(CancellationToken cancellationToken = default)
     {
         // Aggregated in SQL rather than by materialising rows and counting them (spec §10.1).

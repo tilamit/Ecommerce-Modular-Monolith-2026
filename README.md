@@ -8,9 +8,11 @@ The point of this repo is the boundaries. A monolith with folders named "Modules
 reference each other is a layered monolith with extra steps; the architecture tests in
 `tests/ShopHub.ArchitectureTests` are what make the difference non-negotiable.
 
-**Current state: Phases 0-1 complete.** Skeleton, guardrails, host, and all cross-cutting
-concerns are in place and verified. Modules are registered but empty - features land in
-Phases 2-6. See [`docs/PROGRESS.md`](docs/PROGRESS.md).
+**Current state: Phases 0-3 complete.** Skeleton, guardrails, host and cross-cutting
+concerns, the Identity module (auth, users, roles, access management) and the Catalog module
+(categories, products, offers, storefront browse) are built and verified. Ordering and
+Auditing are registered but empty - they land in Phases 4-5. See
+[`docs/PROGRESS.md`](docs/PROGRESS.md).
 
 ---
 
@@ -34,7 +36,7 @@ The SDK version is pinned in `global.json` with `rollForward: latestFeature`, so
 git clone <repo> && cd shophub
 dotnet restore
 dotnet build          # clean under TreatWarningsAsErrors
-dotnet test           # 96 tests
+dotnet test           # 177 tests
 ```
 
 ### Database
@@ -48,16 +50,17 @@ Create the database once:
 sqlcmd -S "(localdb)\MSSQLLocalDB" -E -C -Q "IF DB_ID('ShopHub') IS NULL CREATE DATABASE ShopHub;"
 ```
 
-From Phase 2 each module owns its own migrations and its own history table, so they are
-applied per module:
+Each module owns its own migrations and its own history table
+(`__EFMigrationsHistory_<module>`), so they migrate independently. Because the solution has
+more than one `DbContext`, `dotnet ef` needs `--context` naming the one you mean:
 
 ```bash
-# not yet applicable - no migrations exist before Phase 2
-dotnet ef database update --project src/Modules/Identity/ShopHub.Modules.Identity --startup-project src/Api/ShopHub.Api
-dotnet ef database update --project src/Modules/Catalog/ShopHub.Modules.Catalog   --startup-project src/Api/ShopHub.Api
-dotnet ef database update --project src/Modules/Ordering/ShopHub.Modules.Ordering --startup-project src/Api/ShopHub.Api
-dotnet ef database update --project src/Modules/Auditing/ShopHub.Modules.Auditing --startup-project src/Api/ShopHub.Api
+dotnet ef database update --context IdentityDbContext --project src/Modules/Identity/ShopHub.Modules.Identity --startup-project src/Api/ShopHub.Api
+dotnet ef database update --context CatalogDbContext --project src/Modules/Catalog/ShopHub.Modules.Catalog --startup-project src/Api/ShopHub.Api
 ```
+
+In Development you do not normally need these: the host applies every module's migrations
+and seeds on startup. Running them by hand is for inspecting or staging a migration.
 
 ### Secrets
 
@@ -65,11 +68,18 @@ Never commit credentials. Secrets go in user-secrets (the API project already ha
 `UserSecretsId`):
 
 ```bash
-dotnet user-secrets --project src/Api/ShopHub.Api set "Seed:AdminPassword" "<your-password>"
+dotnet user-secrets --project src/Api/ShopHub.Api set "Jwt:SigningKey"        "<at least 32 characters>"
+dotnet user-secrets --project src/Api/ShopHub.Api set "Seed:AdminPassword"    "<your-password>"
+dotnet user-secrets --project src/Api/ShopHub.Api set "Seed:CustomerPassword" "<your-password>"
 ```
 
-From Phase 2, startup **fails loudly** if a required seed password is missing rather than
-defaulting to something guessable.
+Startup **fails loudly** if any of these is missing, rather than defaulting to something
+guessable. The signing key is rejected below 32 bytes - a short HS256 key silently weakens
+every token issued.
+
+**Default logins** (Development seed): `admin@shophub.local` with the Admin role, plus
+`ada@example.com`, `grace@example.com` and `alan@example.com` as Customers. Passwords are
+whatever you set above; none are stored in source.
 
 ### Run the API
 
@@ -83,6 +93,7 @@ dotnet run --project src/Api/ShopHub.Api
 | `http://localhost:5069/openapi/v1.json` | OpenAPI 3.1.1 document |
 | `http://localhost:5069/health/live` | Liveness - runs no checks by design |
 | `http://localhost:5069/health/ready` | Readiness - includes the SQL Server probe |
+| `http://localhost:5069/api/v1/catalog/products` | Storefront product grid (anonymous) |
 
 ### Run the frontend
 

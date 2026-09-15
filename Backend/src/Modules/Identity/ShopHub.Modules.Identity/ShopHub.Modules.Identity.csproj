@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Module implementation project. Spec §4.1: may reference Shared.Kernel,
+    Shared.Contracts, Shared.Infrastructure, its own Contracts and other
+    modules' *.Contracts projects. Never another module's implementation.
+    Cross-module Contracts references are added in the phase that needs them.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>ShopHub.Modules.Identity</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <!-- Design-time only: required by `dotnet ef migrations`, not shipped at runtime. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShopHub.UnitTests" />
+    <InternalsVisibleTo Include="ShopHub.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Shared\ShopHub.Shared.Kernel\ShopHub.Shared.Kernel.csproj" />
+    <ProjectReference Include="..\..\..\Shared\ShopHub.Shared.Contracts\ShopHub.Shared.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Shared\ShopHub.Shared.Infrastructure\ShopHub.Shared.Infrastructure.csproj" />
+    <ProjectReference Include="..\ShopHub.Modules.Identity.Contracts\ShopHub.Modules.Identity.Contracts.csproj" />
+
+    <!-- Other modules' Contracts only (spec §4.1): login and logout are non-EF events, so
+         they are recorded through Auditing's IAuditWriter rather than by the interceptor. -->
+    <ProjectReference Include="..\..\Auditing\ShopHub.Modules.Auditing.Contracts\ShopHub.Modules.Auditing.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

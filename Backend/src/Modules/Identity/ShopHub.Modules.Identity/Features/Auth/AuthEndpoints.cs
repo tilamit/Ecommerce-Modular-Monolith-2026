@@ -1,0 +1,201 @@
+using System.Diagnostics;
+using FluentValidation;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Hosting;
+using ShopHub.Shared.Infrastructure.RateLimiting;
+using ShopHub.Shared.Infrastructure.Security;
+using ShopHub.Shared.Kernel.Abstractions;
+
+namespace ShopHub.Modules.Identity.Features.Auth;
+
+/// <summary>
+/// <c>/api/v1/auth</c> (spec §7.3).
+/// <para>
+/// The anonymous routes carry the <c>auth</c> policy: 5 requests per minute per IP, the
+/// brute-force guard spec §6.3 scopes to login, register and refresh. The routes that
+/// already require a valid access token carry <c>authenticated</c> instead (ADR-029): a
+/// normal sign-in spends that 5-per-minute budget on its own and <c>/me</c> sharing it was
+/// returning 429 and leaving the sidebar empty.
+/// </para>
+/// </summary>
+internal static class AuthEndpoints
+{
+    internal static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints
+            .MapGroup("/api/v1/auth")
+            .WithTags("Auth");
+
+        group.MapPost("/register", RegisterAsync).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Auth);
+        group.MapPost("/login", LoginAsync).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Auth);
+        group.MapPost("/refresh", RefreshAsync).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Auth);
+        group.MapPost("/logout", LogoutAsync).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Auth);
+        group.MapPost("/logout-all", LogoutAllAsync).RequireAuthorization().RequireRateLimiting(RateLimitPolicies.Authenticated);
+        group.MapGet("/me", MeAsync).RequireAuthorization().RequireRateLimiting(RateLimitPolicies.Authenticated);
+
+        return endpoints;
+    }
+
+    private static async Task<IResult> RegisterAsync(
+        RegisterRequest request,
+        AuthService auth,
+        IValidator<RegisterRequest> validator,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        await validator.ValidateAndThrowAsync(request, cancellationToken);
+
+        var (response, refreshToken, refreshExpiresUtc) =
+            await auth.RegisterAsync(request, ClientIp(http), UserAgent(http), cancellationToken);
+
+        SetRefreshCookie(http, refreshToken, refreshExpiresUtc);
+
+        return Results.Ok(response);
+    }
+
+    private static async Task<IResult> LoginAsync(
+        LoginRequest request,
+        AuthService auth,
+        IValidator<LoginRequest> validator,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        await validator.ValidateAndThrowAsync(request, cancellationToken);
+
+        var (response, refreshToken, refreshExpiresUtc) =
+            await auth.LoginAsync(request, ClientIp(http), UserAgent(http), cancellationToken);
+
+        SetRefreshCookie(http, refreshToken, refreshExpiresUtc);
+
+        return Results.Ok(response);
+    }
+
+    /// <summary>
+    /// Reads the refresh cookie. No body, no Authorization header - by design, this is the
+    /// endpoint called precisely when the access token has expired (spec §7.3).
+    /// <para>
+    /// Failure here is routine, not exceptional: the SPA calls this once on every boot, and
+    /// for a visitor who has never signed in it is supposed to come back 401. So no
+    /// exception is raised - the 401 is composed directly, which keeps an anonymous first
+    /// page load off the throw path entirely.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> RefreshAsync(
+        AuthService auth,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        var presented = http.Request.Cookies[AuthenticationExtensions.RefreshTokenCookieName];
+
+        if (!string.IsNullOrWhiteSpace(presented))
+        {
+            var outcome = await auth.RefreshAsync(presented, ClientIp(http), UserAgent(http), cancellationToken);
+
+            if (outcome.Succeeded)
+            {
+                SetRefreshCookie(http, outcome.RefreshToken!, outcome.RefreshExpiresUtc);
+
+                return Results.Ok(outcome.Response);
+            }
+        }
+
+        // A dead cookie would otherwise be re-presented on every retry.
+        ClearRefreshCookie(http);
+
+        return SessionExpired(http);
+    }
+
+    /// <summary>
+    /// The single 401 shape for a refresh that cannot be honoured, whatever the reason.
+    /// <para>
+    /// Byte-identical to what <c>GlobalExceptionHandler</c> emits for an
+    /// <c>UnauthorizedException</c>, because the SPA branches on
+    /// <c>status == 401 &amp;&amp; code == "refresh_expired"</c> to decide between
+    /// "redirect to login" and "retry" (spec §7.3, §11.5).
+    /// </para>
+    /// </summary>
+    private static IResult SessionExpired(HttpContext http) =>
+        Results.Problem(
+            detail: "Your session has expired. Please sign in again.",
+            instance: $"{http.Request.Method} {http.Request.Path}",
+            statusCode: StatusCodes.Status401Unauthorized,
+            title: "Authentication is required.",
+            type: $"https://httpstatuses.io/{StatusCodes.Status401Unauthorized}",
+            extensions: new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["traceId"] = Activity.Current?.Id ?? http.TraceIdentifier,
+                ["code"] = AuthService.RefreshExpiredCode,
+            });
+
+    private static async Task<IResult> LogoutAsync(AuthService auth, HttpContext http, CancellationToken cancellationToken)
+    {
+        var presented = http.Request.Cookies[AuthenticationExtensions.RefreshTokenCookieName];
+
+        await auth.LogoutAsync(presented, ClientIp(http), cancellationToken);
+        ClearRefreshCookie(http);
+
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> LogoutAllAsync(
+        AuthService auth,
+        ICurrentUser currentUser,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        await auth.LogoutAllAsync(currentUser.RequiredId, ClientIp(http), cancellationToken);
+        ClearRefreshCookie(http);
+
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> MeAsync(
+        AuthService auth,
+        ICurrentUser currentUser,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await auth.GetMeAsync(currentUser.RequiredId, cancellationToken));
+
+    /// <summary>
+    /// Spec A1: <c>HttpOnly; Secure; SameSite=Lax</c>, scoped to the auth path.
+    /// <para>
+    /// <c>HttpOnly</c> puts the token beyond JavaScript's reach, so
+    /// an XSS flaw cannot exfiltrate it and no code path can copy it into localStorage.
+    /// </para>
+    /// </summary>
+    private static void SetRefreshCookie(HttpContext http, string token, DateTime expiresUtc) =>
+        http.Response.Cookies.Append(
+            AuthenticationExtensions.RefreshTokenCookieName,
+            token,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                // Secure is relaxed only over plain-HTTP localhost in Development, because
+                // a Secure cookie is silently dropped there and refresh would never work.
+                Secure = http.Request.IsHttps || !IsDevelopment(http),
+                SameSite = SameSiteMode.Lax,
+                Path = AuthenticationExtensions.RefreshTokenCookiePath,
+                Expires = new DateTimeOffset(expiresUtc, TimeSpan.Zero),
+                IsEssential = true,
+            });
+
+    private static void ClearRefreshCookie(HttpContext http) =>
+        http.Response.Cookies.Delete(
+            AuthenticationExtensions.RefreshTokenCookieName,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = http.Request.IsHttps || !IsDevelopment(http),
+                SameSite = SameSiteMode.Lax,
+                Path = AuthenticationExtensions.RefreshTokenCookiePath,
+            });
+
+    private static bool IsDevelopment(HttpContext http) =>
+        http.RequestServices.GetService(typeof(IHostEnvironment)) is IHostEnvironment env && env.IsDevelopment();
+
+    private static string? ClientIp(HttpContext http) => http.Connection.RemoteIpAddress?.ToString();
+
+    private static string? UserAgent(HttpContext http) =>
+        http.Request.Headers.UserAgent.ToString() is { Length: > 0 } agent ? agent : null;
+}

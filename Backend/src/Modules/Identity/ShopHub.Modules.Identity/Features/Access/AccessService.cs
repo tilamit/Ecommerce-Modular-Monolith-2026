@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Identity.Infrastructure;
 using ShopHub.Modules.Identity.Persistence;
 using ShopHub.Shared.Infrastructure.RateLimiting;
@@ -30,7 +31,7 @@ internal sealed record SetRoleMenusRequest(IReadOnlyList<RoleMenuGrant> Menus);
 /// Access management (spec §9.1): the full menu tree for editing and per-role menu grants.
 /// This is the data behind "an admin grants access to dynamic menus".
 /// </summary>
-internal sealed class AccessService(IdentityDbContext db, IMenuService menus)
+internal sealed class AccessService(IdentityDbContext db, IMenuService menus, IAuditWriter audit)
 {
     internal async Task<IReadOnlyList<MenuAdminNode>> GetMenuTreeAsync(CancellationToken cancellationToken)
     {
@@ -101,12 +102,34 @@ internal sealed class AccessService(IdentityDbContext db, IMenuService menus)
             throw new NotFoundException("menu_item_not_found", "One or more of the supplied menu items do not exist.");
         }
 
+        // Recorded as the titles of the visible menus, which is what the grant means to a reader.
+        // A duplicate id in the request resolves to its first occurrence, as ReplaceMenuItems does.
+        var before = await VisibleMenuTitlesAsync(
+            [.. role.MenuItems.Where(m => m.IsVisible).Select(m => m.MenuItemId)],
+            cancellationToken);
+
+        var after = await VisibleMenuTitlesAsync(
+            [.. grants.DistinctBy(g => g.MenuItemId).Where(g => g.IsVisible).Select(g => g.MenuItemId)],
+            cancellationToken);
+
         role.ReplaceMenuItems(grants.Select(g => (g.MenuItemId, g.IsVisible)));
         await db.SaveChangesAsync(cancellationToken);
 
         // The sidebar is cached per role set; revoking a menu must show up on next sign-in.
         await menus.InvalidateAsync(cancellationToken);
+
+        AccessChangeAudit.Write(audit, role, AccessChangeAudit.MenusField, before, after);
     }
+
+    private async Task<IReadOnlyList<string>> VisibleMenuTitlesAsync(
+        IReadOnlyCollection<Guid> menuItemIds,
+        CancellationToken cancellationToken) =>
+        await db.MenuItems
+            .Where(m => menuItemIds.Contains(m.Id))
+            .OrderBy(m => m.DisplayOrder)
+            .ThenBy(m => m.Title)
+            .Select(m => m.Title)
+            .ToListAsync(cancellationToken);
 }
 
 /// <summary><c>/api/v1/menus</c> and the role-menu grant endpoints (spec §9.1).</summary>

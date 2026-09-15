@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Identity.Domain;
+using ShopHub.Modules.Identity.Features.Access;
 using ShopHub.Modules.Identity.Infrastructure;
 using ShopHub.Modules.Identity.Persistence;
 using ShopHub.Shared.Infrastructure.Persistence;
@@ -26,7 +28,7 @@ internal sealed record PermissionListItem(Guid Id, string Code, string DisplayNa
 internal sealed record SetRolePermissionsRequest(IReadOnlyList<Guid> PermissionIds);
 
 /// <summary>Roles and their permissions (spec §9.1).</summary>
-internal sealed class RoleService(IdentityDbContext db, IPermissionService permissions)
+internal sealed class RoleService(IdentityDbContext db, IPermissionService permissions, IAuditWriter audit)
 {
     /// <summary>
     /// Paged like every other list (spec §6.5) - "no endpoint anywhere returns an unbounded
@@ -160,13 +162,28 @@ internal sealed class RoleService(IdentityDbContext db, IPermissionService permi
             throw new NotFoundException("permission_not_found", "One or more of the supplied permissions do not exist.");
         }
 
+        // Resolved before the save so the audit entry can be written the moment it succeeds.
+        var before = await PermissionCodesAsync([.. role.Permissions.Select(p => p.PermissionId)], cancellationToken);
+        var after = await PermissionCodesAsync(permissionIds, cancellationToken);
+
         role.ReplacePermissions(permissionIds);
         await db.SaveChangesAsync(cancellationToken);
 
         // This can change the effective permissions of every user in the role, so the
         // per-user cache is cleared wholesale rather than user by user.
         await permissions.InvalidateAllAsync(cancellationToken);
+
+        AccessChangeAudit.Write(audit, role, AccessChangeAudit.PermissionsField, before, after);
     }
+
+    private async Task<IReadOnlyList<string>> PermissionCodesAsync(
+        IReadOnlyCollection<Guid> permissionIds,
+        CancellationToken cancellationToken) =>
+        await db.Permissions
+            .Where(p => permissionIds.Contains(p.Id))
+            .OrderBy(p => p.Code)
+            .Select(p => p.Code)
+            .ToListAsync(cancellationToken);
 
     private async Task<RoleListItem> GetRoleAsync(Guid id, CancellationToken cancellationToken) =>
         await db.Roles

@@ -271,7 +271,126 @@ public sealed class AuditingAndDashboardTests(ShopHubApiFactory factory)
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Saving the access page only adds and removes link rows, which the audit interceptor does
+    /// not record, so a permission change used to leave no trace at all. Each save must now
+    /// produce one entry holding the role's permissions before and after.
+    /// </summary>
+    [Fact]
+    public async Task ChangingARolesPermissions_RecordsTheBeforeAndAfterLists()
+    {
+        using var admin = await AdminClientAsync();
+        var roleId = await CreateRoleAsync(admin);
+
+        using var permissionsResponse = await admin.GetAsync(new Uri("/api/v1/permissions", UriKind.Relative));
+        var catalog = (await permissionsResponse.Content.ReadFromJsonAsync<JsonElement>())
+            .EnumerateArray()
+            .Select(p => (Id: p.GetProperty("id").GetGuid(), Code: p.GetProperty("code").GetString()!))
+            .OrderBy(p => p.Code, StringComparer.Ordinal)
+            .Take(3)
+            .ToArray();
+
+        await SetPermissionsAsync(admin, roleId, catalog[0].Id, catalog[1].Id);
+        var first = await WaitForAccessChangeAsync(admin, roleId, afterId: 0);
+
+        await SetPermissionsAsync(admin, roleId, catalog[1].Id, catalog[2].Id);
+        var second = await WaitForAccessChangeAsync(admin, roleId, afterId: first.Id);
+
+        Assert.Equal(new[] { "Permissions" }, second.Changed);
+        Assert.Equal(new[] { catalog[0].Code, catalog[1].Code }, second.Before("Permissions"));
+        Assert.Equal(new[] { catalog[1].Code, catalog[2].Code }, second.After("Permissions"));
+        Assert.Empty(first.Before("Permissions"));
+    }
+
+    [Fact]
+    public async Task ChangingARolesMenus_RecordsTheVisibleMenusBeforeAndAfter()
+    {
+        using var admin = await AdminClientAsync();
+        var roleId = await CreateRoleAsync(admin);
+
+        using var menusResponse = await admin.GetAsync(new Uri("/api/v1/menus", UriKind.Relative));
+        var menus = (await menusResponse.Content.ReadFromJsonAsync<JsonElement>())
+            .EnumerateArray()
+            .Select(m => (Id: m.GetProperty("id").GetGuid(), Title: m.GetProperty("title").GetString()!))
+            .Take(2)
+            .ToArray();
+
+        using var save = await admin.PutAsJsonAsync(
+            $"/api/v1/roles/{roleId}/menus",
+            new
+            {
+                menus = new[]
+                {
+                    new { menuItemId = menus[0].Id, isVisible = true },
+                    new { menuItemId = menus[1].Id, isVisible = false },
+                },
+            });
+
+        Assert.True(save.IsSuccessStatusCode, $"Saving menus returned {(int)save.StatusCode}.");
+
+        var entry = await WaitForAccessChangeAsync(admin, roleId, afterId: 0);
+
+        Assert.Equal(new[] { "Menus" }, entry.Changed);
+        Assert.Empty(entry.Before("Menus"));
+        Assert.Equal(new[] { menus[0].Title }, entry.After("Menus"));
+    }
+
     // --- helpers ------------------------------------------------------------
+
+    private sealed record AccessChange(long Id, string[] Changed, JsonElement OldValues, JsonElement NewValues)
+    {
+        public string[] Before(string field) => Items(OldValues, field);
+
+        public string[] After(string field) => Items(NewValues, field);
+
+        private static string[] Items(JsonElement values, string field) =>
+            [.. values.GetProperty(field).EnumerateArray().Select(i => i.GetString()!)];
+    }
+
+    private static async Task<Guid> CreateRoleAsync(HttpClient admin)
+    {
+        using var response = await admin.PostAsJsonAsync(
+            "/api/v1/roles",
+            new { name = $"Audit test {Guid.NewGuid():N}"[..40], description = "Created by an audit test." });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+    }
+
+    private static async Task SetPermissionsAsync(HttpClient admin, Guid roleId, params Guid[] permissionIds)
+    {
+        using var response = await admin.PutAsJsonAsync(
+            $"/api/v1/roles/{roleId}/permissions",
+            new { permissionIds });
+
+        Assert.True(response.IsSuccessStatusCode, $"Saving permissions returned {(int)response.StatusCode}.");
+    }
+
+    /// <summary>Waits for the newest PermissionChange entry for a role written after a given entry.</summary>
+    private static async Task<AccessChange> WaitForAccessChangeAsync(HttpClient admin, Guid roleId, long afterId)
+    {
+        var row = await WaitForAuditEntryAsync(
+            admin,
+            item => item.GetProperty("action").GetString() == "PermissionChange"
+                && item.GetProperty("entityName").GetString() == "Role"
+                && item.GetProperty("entityId").GetString() == roleId.ToString()
+                && item.GetProperty("id").GetInt64() > afterId,
+            TimeSpan.FromSeconds(15));
+
+        Assert.NotNull(row);
+
+        var id = row!.Value.GetProperty("id").GetInt64();
+
+        using var detail = await admin.GetAsync(new Uri($"/api/v1/audit-trails/{id}", UriKind.Relative));
+        var full = await detail.Content.ReadFromJsonAsync<JsonElement>();
+
+        return new AccessChange(
+            id,
+            JsonSerializer.Deserialize<string[]>(full.GetProperty("changedColumns").GetString()!)!,
+            JsonSerializer.Deserialize<JsonElement>(full.GetProperty("oldValues").GetString()!),
+            JsonSerializer.Deserialize<JsonElement>(full.GetProperty("newValues").GetString()!));
+    }
 
     private sealed record SeedProduct(Guid Id, Guid CategoryId, string Sku, string Name, decimal Price, int StockQuantity);
 

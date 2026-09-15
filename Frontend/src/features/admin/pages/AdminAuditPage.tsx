@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, Skeleton } from '../../../shared/components/ui/
 import { DataTable, type Column } from '../../../shared/components/ui/DataTable';
 import { formatDateTime } from '../../../shared/lib/format';
 import { useListParams } from '../../../shared/hooks/useListParams';
+import { AuditFieldValue } from '../components/AuditFieldValue';
 
 const ACTIONS = ['Insert', 'Update', 'Delete', 'Login', 'LoginFailed', 'Logout', 'Export', 'PermissionChange'];
 
@@ -92,12 +93,16 @@ const ValueDiff = ({ id }: { id: number }) => {
           <tbody className="divide-y divide-border-subtle">
             {keys.map((key) => (
               <tr key={key}>
-                <th scope="row" className="py-1 pr-3 text-left font-medium text-content">
+                <th scope="row" className="py-1 pr-3 text-left align-top font-medium text-content">
                   {key}
                   {changed.includes(key) && <span className="ml-1 text-brand-600">•</span>}
                 </th>
-                <td className="py-1 pr-3 text-content-muted">{String(oldValues?.[key] ?? '-')}</td>
-                <td className="py-1 text-content">{String(newValues?.[key] ?? '-')}</td>
+                <td className="py-1 pr-3 align-top text-content-muted">
+                  <AuditFieldValue value={oldValues?.[key]} other={newValues?.[key]} side="before" />
+                </td>
+                <td className="py-1 align-top text-content">
+                  <AuditFieldValue value={newValues?.[key]} other={oldValues?.[key]} side="after" />
+                </td>
               </tr>
             ))}
           </tbody>

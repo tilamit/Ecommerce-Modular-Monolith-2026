@@ -380,6 +380,10 @@ discounts, tax and shipping are not applied to totals yet: they are all computed
 - Every insert, update and delete in any module is recorded automatically, with the changed
   columns and their old and new values. Sign-ins, failed sign-ins and sign-outs are recorded
   too.
+- Saving the access management page records a `PermissionChange` entry on the role, holding
+  the full list of permission codes or visible menu titles before and after the save. The
+  detail view lists them one per line, striking through what was removed and highlighting
+  what was added. A save that changes nothing records nothing.
 - Each entry stores who did it, their roles, IP address, browser, the HTTP method and path, a
   correlation id and the **screen** the change came from, which the SPA sends in an
   `X-Client-Page` header.
@@ -1008,16 +1012,16 @@ Frontend/
 ## Testing
 
 ```bash
-cd Backend  && dotnet test          # 253 tests
-cd Frontend && npm test             # 84 tests
+cd Backend  && dotnet test          # 255 tests
+cd Frontend && npm test             # 88 tests
 ```
 
 | Suite | Count | Scope |
 |---|---|---|
 | `ShopHub.UnitTests` | 118 | Domain rules, services, error mapping |
 | `ShopHub.ArchitectureTests` | 52 | Module boundaries, schema ownership, visibility |
-| `ShopHub.IntegrationTests` | 83 | The real host against a real database: auth lifecycle, rate limits, checkout, ownership, caching |
-| Frontend | 84 | Components, HTTP client, retry policy, sign-in flow, accessibility, import boundaries |
+| `ShopHub.IntegrationTests` | 85 | The real host against a real database: auth lifecycle, rate limits, checkout, ownership, caching |
+| Frontend | 88 | Components, HTTP client, retry policy, sign-in flow, accessibility, import boundaries |
 
 Integration tests create and drop their own LocalDB database per run, so they never share
 state with each other or with the Development database. They run sequentially because

@@ -2,6 +2,8 @@ using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using ShopHub.Modules.Auditing.Contracts;
+using ShopHub.Shared.Infrastructure.Auditing;
 using ShopHub.Shared.Infrastructure.RateLimiting;
 using ShopHub.Shared.Infrastructure.Security;
 using ShopHub.Shared.Kernel.Abstractions;
@@ -140,8 +142,19 @@ internal static class UserEndpoints
     private static async Task<IResult> GetMyProfileAsync(
         UserService users,
         ICurrentUser currentUser,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await users.GetUserByIdAsync(currentUser.RequiredId, cancellationToken));
+        IAuditWriter audit,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        var profile = await users.GetUserByIdAsync(currentUser.RequiredId, cancellationToken);
+
+        if (http.ShouldRecordRead())
+        {
+            audit.WriteRead("identity", "User", profile.Id);
+        }
+
+        return Results.Ok(profile);
+    }
 
     private static async Task<IResult> UpdateMyProfileAsync(
         UpdateMyProfileRequest request,

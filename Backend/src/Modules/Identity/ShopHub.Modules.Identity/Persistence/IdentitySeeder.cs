@@ -245,7 +245,9 @@ internal sealed class IdentitySeeder(
     {
         var normalized = User.Normalize(email);
 
-        if (await db.Users.AnyAsync(u => u.NormalizedEmail == normalized, cancellationToken))
+        // A deleted development account counts as existing, so deleting it is not undone on
+        // the next start.
+        if (await db.Users.IgnoreQueryFilters().AnyAsync(u => u.NormalizedEmail == normalized, cancellationToken))
         {
             return;
         }

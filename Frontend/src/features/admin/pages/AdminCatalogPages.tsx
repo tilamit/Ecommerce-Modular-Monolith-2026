@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, useMutation, keepPreviousData } from '@tansta
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   deleteCategory,
+  deleteOffer,
   deleteProduct,
   fetchCategories,
   fetchOffers,
@@ -15,6 +16,7 @@ import { fetchProducts } from '../../catalog';
 import { ListPage } from '../components/ListPage';
 import { ProductFormModal } from '../components/ProductFormModal';
 import { CategoryFormModal } from '../components/CategoryFormModal';
+import { OfferFormModal } from '../components/OfferFormModal';
 import { useListParams } from '../../../shared/hooks/useListParams';
 import { Button } from '../../../shared/components/ui/Button';
 import { ConfirmModal } from '../../../shared/components/ui/Modal';
@@ -36,6 +38,7 @@ import type { ProductListItem } from '../../../shared/api/types';
 const CATALOG_WRITE = {
   products: 'catalog.products.write',
   categories: 'catalog.categories.write',
+  offers: 'catalog.offers.write',
 } as const;
 
 /** Admin products (spec §9.2). Unlike the storefront, this shows inactive rows too. */
@@ -235,7 +238,7 @@ export const AdminProductsPage = () => {
     <ConfirmModal
       open={deleting !== null}
       title="Delete product"
-      description={`"${deleting?.name ?? ''}" will be removed from the catalogue. Orders that already contain it are unaffected.`}
+      description={`"${deleting?.name ?? ''}" will be deleted. It leaves the storefront and every list, but its record is kept for the audit trail and orders that already contain it are unaffected.`}
       isPending={deleteMutation.isPending}
       onConfirm={() => deleting !== null && deleteMutation.mutate(deleting.id)}
       onClose={() => setDeleting(null)}
@@ -392,7 +395,7 @@ export const AdminCategoriesPage = () => {
       <ConfirmModal
         open={deleting !== null}
         title="Delete category"
-        description={`"${deleting?.name ?? ''}" will be removed. A category that still holds products or subcategories cannot be deleted.`}
+        description={`"${deleting?.name ?? ''}" will be deleted. Its record is kept for the audit trail. A category that still holds products cannot be deleted.`}
         isPending={deleteMutation.isPending}
         onConfirm={() => deleting !== null && deleteMutation.mutate(deleting.id)}
         onClose={() => setDeleting(null)}
@@ -403,11 +406,32 @@ export const AdminCategoriesPage = () => {
 
 export const AdminOffersPage = () => {
   const { params, update, toQuery } = useListParams();
+  const queryClient = useQueryClient();
+  const { show } = useToast();
+
+  const canWrite = hasPermission(CATALOG_WRITE.offers);
+
+  const [editing, setEditing] = useState<OfferListItem | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [deleting, setDeleting] = useState<OfferListItem | null>(null);
 
   const query = useQuery({
     queryKey: ['admin', 'offers', params],
     queryFn: ({ signal }) => fetchOffers(toQuery(), signal),
     placeholderData: keepPreviousData,
+  });
+
+  const refreshList = () => queryClient.invalidateQueries({ queryKey: ['admin', 'offers'] });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteOffer(id),
+    onSuccess: async () => {
+      await refreshList();
+      show({ tone: 'success', message: 'Offer deleted.' });
+      setDeleting(null);
+    },
+    onError: (error: unknown) =>
+      show({ tone: 'error', message: error instanceof Error ? error.message : 'Could not delete the offer.' }),
   });
 
   const columns: Column<OfferListItem>[] = [
@@ -447,19 +471,78 @@ export const AdminOffersPage = () => {
         </span>
       ),
     },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (o) =>
+        canWrite ? (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Edit ${o.code}`}
+              onClick={() => {
+                setEditing(o);
+                setIsFormOpen(true);
+              }}
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+            </Button>
+
+            <Button variant="ghost" size="sm" aria-label={`Delete ${o.code}`} onClick={() => setDeleting(o)}>
+              <Trash2 className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null,
+    },
   ];
 
   return (
-    <ListPage
-      title="Offers"
-      columns={columns}
-      rowKey={(o) => o.id}
-      query={query}
-      search={params.search}
-      onSearchChange={(search) => update({ search })}
-      searchPlaceholder="Search by code or name…"
-      onPageChange={(page) => update({ page })}
-      emptyTitle="No offers yet"
-    />
+    <>
+      <ListPage
+        title="Offers"
+        columns={columns}
+        rowKey={(o) => o.id}
+        query={query}
+        search={params.search}
+        onSearchChange={(search) => update({ search })}
+        searchPlaceholder="Search by code or name…"
+        onPageChange={(page) => update({ page })}
+        emptyTitle="No offers yet"
+        actions={
+          canWrite && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditing(null);
+                setIsFormOpen(true);
+              }}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              New offer
+            </Button>
+          )
+        }
+      />
+
+      {canWrite && (
+        <OfferFormModal
+          open={isFormOpen}
+          offer={editing}
+          onClose={() => setIsFormOpen(false)}
+          onSaved={() => void refreshList()}
+        />
+      )}
+
+      <ConfirmModal
+        open={deleting !== null}
+        title="Delete offer"
+        description={`"${deleting?.code ?? ''}" will be deleted. It leaves every list and can no longer be used, but its record is kept for the audit trail and the code becomes available for a new offer.`}
+        isPending={deleteMutation.isPending}
+        onConfirm={() => deleting !== null && deleteMutation.mutate(deleting.id)}
+        onClose={() => setDeleting(null)}
+      />
+    </>
   );
 };

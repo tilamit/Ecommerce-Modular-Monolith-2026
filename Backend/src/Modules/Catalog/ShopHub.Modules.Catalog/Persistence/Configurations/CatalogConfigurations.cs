@@ -152,12 +152,17 @@ internal sealed class OfferConfiguration : IEntityTypeConfiguration<Offer>
         builder.Property(o => o.EndUtc).HasColumnType("datetime2(3)");
         builder.Property(o => o.CreatedUtc).HasColumnType("datetime2(3)");
         builder.Property(o => o.ModifiedUtc).HasColumnType("datetime2(3)");
+        builder.Property(o => o.DeletedUtc).HasColumnType("datetime2(3)");
 
         // Stored as its name, not its ordinal, so inserting an enum member later cannot
         // silently change what existing rows mean.
         builder.Property(o => o.DiscountType).HasConversion<string>().HasMaxLength(32);
 
-        builder.HasIndex(o => o.Code).IsUnique().HasDatabaseName("IX_Offers_Code");
+        // Unique among offers that still exist, so the code of a deleted offer can be reused.
+        builder.HasIndex(o => o.Code)
+            .IsUnique()
+            .HasFilter("[IsDeleted] = 0")
+            .HasDatabaseName("IX_Offers_Code");
         builder.HasIndex(o => new { o.IsActive, o.EndUtc }).HasDatabaseName("IX_Offers_IsActive_EndUtc");
 
         builder.HasMany(o => o.Products)
@@ -166,6 +171,8 @@ internal sealed class OfferConfiguration : IEntityTypeConfiguration<Offer>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Navigation(o => o.Products).UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasQueryFilter(o => !o.IsDeleted);
     }
 }
 

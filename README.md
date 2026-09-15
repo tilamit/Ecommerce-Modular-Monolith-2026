@@ -39,6 +39,7 @@ frontend applies the same rule to its feature folders.
   - [Orders and cancellation](#orders-and-cancellation)
   - [Catalog administration](#catalog-administration)
   - [Offers](#offers)
+  - [Deleting records](#deleting-records)
   - [Audit trail](#audit-trail)
 - [Why a modular monolith](#why-a-modular-monolith)
 - [Modular monolith vs microservices](#modular-monolith-vs-microservices)
@@ -80,12 +81,14 @@ new user without rewriting historical orders.
 **Customer account.** Personal dashboard, purchase history with date filters, order detail
 and cancellation while an order is still `Pending` or `Confirmed`.
 
-**Administration.** A dashboard that spans all four modules, user management,
-product and category CRUD with image upload, offers, order management, the audit trail and
-access management, where an admin grants permissions and menu items to a role.
+**Administration.** A dashboard that spans all four modules, user management with role
+assignment, product, category and offer management with image upload, order management, the
+audit trail and access management, where an admin grants permissions and menu items to a role.
+Every delete is a soft delete.
 
-**Audit trail.** Every entity change in every module is captured by a `SaveChanges`
-interceptor, queued onto a bounded channel and bulk-inserted by a background service, so
+**Audit trail.** Every create, update and delete in every module, every change to roles,
+permissions and menus, every sign-in and every record opened by a signed-in user is recorded
+with its old and new values. Entries are queued and bulk-inserted by a background service, so
 auditing never sits on the request path. The table is append-only: no update endpoint, no
 delete endpoint and no admin override.
 
@@ -211,18 +214,33 @@ To take access away, untick the **permission**.
 ### User and role management
 
 **Administration > Users** (`/admin/users`, needs `identity.users.read`) lists users with
-search, sorting and paging and has an **Activate / Deactivate** button per row, which needs
-`identity.users.manage`. The rest of user administration is available through the API with
-the same permission: `POST /api/v1/users` to create, `PUT /api/v1/users/{id}` to edit,
-`PUT /api/v1/users/{id}/roles` to assign roles and `DELETE /api/v1/users/{id}` to delete.
+search, sorting and paging. With `identity.users.manage` each row has **Change role** and
+**Activate / Deactivate** buttons and the toolbar has a **Change role** button.
+
+**Changing a user's role**
+
+1. Open **Change role** from a user's row, which preselects that user, or from the toolbar.
+2. Choose the **User** from a dropdown that names every user by full name and email, for
+   example `Grace Hopper (grace@example.com)`. The search box above it narrows the list by
+   name or email.
+3. Choose the **Role** from a dropdown of every role that exists. The user's current role is
+   preselected and shown under the dropdown.
+4. Press **Save role**. The user's roles are replaced by the chosen role.
+
+The new permissions apply to the user's very next request. Their sidebar and buttons follow on
+their next sign-in or page reload. The change is recorded in the audit trail with the role
+names before and after. A user can hold several roles through the API
+(`PUT /api/v1/users/{id}/roles`); the screen assigns one.
 
 - **Deactivating** a user revokes all their refresh tokens and clears their cached
   permissions. They cannot sign in or refresh again and their current access token stops
   working when it expires, within 15 minutes at most.
-- **Deleting** is a soft delete: the row is flagged rather than removed, so orders and the
-  audit trail keep a valid reference.
-- Changing a user's roles takes effect on the API immediately.
-- Any signed-in user can view and update their own profile under **Your account > My Profile**.
+- **Creating, editing and deleting** users is available through the API with
+  `identity.users.manage`: `POST /api/v1/users`, `PUT /api/v1/users/{id}` and
+  `DELETE /api/v1/users/{id}`. Deleting is a soft delete.
+- Any signed-in user can view and update their own first name, last name and phone number
+  under **Your account > My Profile**. Opening the page and saving it are both recorded in the
+  audit trail.
 
 **Roles** are managed through `/api/v1/roles` (`identity.roles.read` to list,
 `identity.roles.manage` to create, rename and delete). Role names are unique, the seeded
@@ -349,7 +367,8 @@ Pending -> Confirmed -> Processing -> Shipped -> Delivered -> Refunded
 
 **Administration > Products** and **Categories** list every row, including inactive ones.
 The **New**, **Edit** and **Delete** buttons appear only with `catalog.products.write` or
-`catalog.categories.write`.
+`catalog.categories.write`. **Edit** loads the record fresh from the API, so the form always
+shows what is stored and opening it is recorded in the audit trail as a read.
 
 - **Products** have a name, slug, SKU, short and long description, price and optional
   compare-at price with a currency, stock, category, a featured flag and images. Deactivating
@@ -365,35 +384,116 @@ The **New**, **Edit** and **Delete** buttons appear only with `catalog.products.
 
 ### Offers
 
-**Administration > Offers** lists the discount offers with their code, name, discount,
-validity window, how many times each was used and whether it can currently be redeemed. An
-offer is a percentage or fixed amount with a start and end date, an optional minimum order
-amount and an optional redemption limit. The discount maths lives on the `Offer` entity and a
-fixed discount can never push a total below zero. An offer code entered at checkout is recorded on the order, but
-discounts, tax and shipping are not applied to totals yet: they are all computed in one method,
-`Order.ApplyTotals`, which is where applying them will go.
+**Administration > Offers** (`/admin/offers`, needs `catalog.offers.read`) lists the discount
+offers with their code, name, discount, validity window, how many times each was used and
+whether it can currently be redeemed. With `catalog.offers.write` the screen has
+**New offer**, **Edit** and **Delete**.
+
+| Field | Rules |
+|---|---|
+| Code | Required, unique among offers that are not deleted, stored in capitals |
+| Name | Required |
+| Discount type and value | A percentage up to 100 or a fixed amount, always above zero |
+| Starts and Ends | Dates; the offer runs from the start of the first day to the end of the last day in the administrator's time zone |
+| Minimum order amount | Optional |
+| Maximum redemptions | Optional; blank means no limit |
+| Active | Shown when editing; an inactive offer cannot be redeemed |
+
+The discount maths lives on the `Offer` entity and a fixed discount can never push a total
+below zero. An offer code entered at checkout is recorded on the order. Discounts, tax and
+shipping are computed in one method, `Order.ApplyTotals`, which currently applies zero for
+all three.
+
+### Deleting records
+
+Every delete in the application is a **soft delete**: products, categories, offers and users.
+The row is kept with `IsDeleted` set and `DeletedUtc` stamped, while a global EF Core query
+filter hides it from every screen, list, lookup and storefront page.
+
+- Orders, the audit trail and anything else that points at the record keep a valid reference.
+- Unique values are unique among live records only, so a deleted product's SKU, a deleted
+  offer's code or a deleted user's email can be used again.
+- A soft delete is recorded in the audit trail as a **Delete**, not as an update.
+- The development seed data counts deleted rows as existing, so a seeded record that was
+  deleted stays deleted when the API restarts.
+- A category that still holds products cannot be deleted until they are moved elsewhere.
+
+Roles are the exception. They are removed through the API only, only when no user holds them
+and the seeded system roles can never be removed.
 
 ### Audit trail
 
-**Administration > Audit Trails** (`/admin/audit-trails`, needs `audit.read`):
+**Administration > Audit Trails** (`/admin/audit-trails`, needs `audit.read`) is the complete,
+append-only record of what happened in the application: who did what, to which record, from
+which screen and what the values were before and after.
 
-- Every insert, update and delete in any module is recorded automatically, with the changed
-  columns and their old and new values. Sign-ins, failed sign-ins and sign-outs are recorded
-  too.
-- Saving the access management page records a `PermissionChange` entry on the role, holding
-  the full list of permission codes or visible menu titles before and after the save. The
-  detail view lists them one per line, striking through what was removed and highlighting
-  what was added. A save that changes nothing records nothing.
-- Each entry stores who did it, their roles, IP address, browser, the HTTP method and path, a
-  correlation id and the **screen** the change came from, which the SPA sends in an
-  `X-Client-Page` header.
-- The screen filters by action and module and **View** opens the old and new values directly
-  under the row. The API also filters by text, entity, user, screen and date range.
-- Properties such as password hashes and token hashes are marked `[NoAudit]` and never written.
-- Capture never slows a request down or breaks it: entries are queued in memory and written
-  in batches by a background service.
-- The trail is **append-only**. There is no endpoint to edit or delete an entry, not even
-  for an admin.
+#### What is recorded
+
+| Area | Action | Recorded when | Values stored |
+|---|---|---|---|
+| Products | `Insert` | A product is created | Every column |
+| Products | `Read` | A signed-in user opens a product, from the storefront or the edit form | None |
+| Products | `Update` | A product is edited, activated or deactivated | Changed columns, old and new |
+| Products | `Update` (Images) | The product's image list changes | Whole list before and after, primary image marked |
+| Products | `Delete` | A product is deleted | `IsDeleted` and `DeletedUtc` |
+| Categories | `Insert`, `Read`, `Update`, `Delete` | Created, opened for editing, edited, deleted | As for products |
+| Offers | `Insert`, `Read`, `Update`, `Delete` | Created, opened for editing, edited, deleted | As for products |
+| Offers | `Update` (Products) | The products an offer is limited to change | Product names before and after |
+| Profile | `Read` | A user opens **My Profile** | None |
+| Profile | `Update` | A user saves **My Profile** | Changed fields, old and new |
+| Users | `Insert`, `Update`, `Delete` | Created, edited, activated or deactivated, deleted | Changed columns, never the password hash |
+| Users | `PermissionChange` (Roles) | A user's roles change, including at creation | Role names before and after, with the user's name and email |
+| Roles | `PermissionChange` (Permissions) | A role's permissions are saved on the access page | Permission codes before and after |
+| Roles | `PermissionChange` (Menus) | A role's menus are saved on the access page | Visible menu titles before and after |
+| Roles | `Insert`, `Update`, `Delete` | Created, renamed, deactivated, deleted | Changed columns |
+| Orders | `Insert`, `Update` | An order is placed, its status changes | Changed columns |
+| Sign-in | `Login`, `LoginFailed`, `Logout` | Every sign-in attempt and sign-out | The user or attempted identity |
+
+**Reads** are recorded when a signed-in user opens a single record. Lists, searches and
+dashboards are not recorded as reads. Anonymous storefront browsing is not recorded because
+there is no user to attribute it to. A request the browser abandons before the answer arrives
+is not recorded either, so a record opened once appears once.
+
+**List changes** - a user's roles, a role's permissions or menus, a product's images and an
+offer's products - are stored in link or child rows. Each save that changes one of these lists
+writes a single entry holding the complete list before and after, named by something a reader
+recognises: the role name, the user's name and email, the product name or the offer code. A
+save that leaves the list as it was writes nothing.
+
+#### What every entry holds
+
+| Field | Contents |
+|---|---|
+| When | UTC timestamp, shown in the viewer's time zone |
+| Action | `Insert`, `Read`, `Update`, `Delete`, `PermissionChange`, `Login`, `LoginFailed`, `Logout` |
+| Module and entity | The owning module (`identity`, `catalog`, `ordering`, `audit`), the entity type and its id |
+| User | Id, name and roles of whoever acted, copied at the time so the entry survives a rename or delete |
+| Screen | The SPA route the action came from, sent in the `X-Client-Page` header |
+| Request | HTTP method, path, IP address, browser and correlation id |
+| Values | Changed column names with their old and new values |
+
+#### Using the screen
+
+- Filter by **Action**, **Module** and **User**. The user dropdown names every user by full
+  name and email and has its own search box. The API also filters by text, entity, screen and
+  date range.
+- **View** opens the detail directly under its row: the request details and a **Before** and
+  **After** table. Lists are shown one item per line; on the Before side removed items are
+  struck through and on the After side added items are highlighted.
+- The trail is keyset-paginated with **Previous** and **Next**, so it stays fast however large
+  it grows.
+
+#### Guarantees
+
+- **Append-only.** There is no endpoint to edit or delete an entry, not even for an admin.
+- **Secrets never reach it.** Properties marked `[NoAudit]`, such as password hashes and token
+  hashes, are skipped when values are captured.
+- **It never slows or breaks a request.** Changes are captured by a `SaveChanges`
+  interceptor on every module's `DbContext`, queued in memory and written in batches by a
+  background service. A failure to write an entry is logged and cannot roll back the business
+  change.
+- **Only committed changes are recorded.** Entries are queued after a save succeeds; a failed
+  save records nothing.
 
 ---
 
@@ -1012,16 +1112,16 @@ Frontend/
 ## Testing
 
 ```bash
-cd Backend  && dotnet test          # 255 tests
-cd Frontend && npm test             # 88 tests
+cd Backend  && dotnet test          # 260 tests
+cd Frontend && npm test             # 93 tests
 ```
 
 | Suite | Count | Scope |
 |---|---|---|
 | `ShopHub.UnitTests` | 118 | Domain rules, services, error mapping |
 | `ShopHub.ArchitectureTests` | 52 | Module boundaries, schema ownership, visibility |
-| `ShopHub.IntegrationTests` | 85 | The real host against a real database: auth lifecycle, rate limits, checkout, ownership, caching |
-| Frontend | 88 | Components, HTTP client, retry policy, sign-in flow, accessibility, import boundaries |
+| `ShopHub.IntegrationTests` | 90 | The real host against a real database: auth lifecycle, rate limits, checkout, ownership, caching, audit coverage |
+| Frontend | 93 | Components, HTTP client, retry policy, sign-in flow, role and offer forms, accessibility, import boundaries |
 
 Integration tests create and drop their own LocalDB database per run, so they never share
 state with each other or with the Development database. They run sequentially because
@@ -1036,15 +1136,15 @@ All routes are versioned under `/api/v1`.
 | Group | Module | Notes |
 |---|---|---|
 | `/auth` | Identity | Register, login, refresh, logout, current user and menu |
-| `/users`, `/roles` | Identity | Admin user and role management |
+| `/users`, `/roles` | Identity | Admin user management, role assignment and role management; `/users/me/profile` for the signed-in user |
 | `/menus`, `/roles/{id}/menus` | Identity | Access management: which menus each role sees |
 | `/catalog/products` | Catalog | Storefront browse, search, typeahead, admin writes, image upload |
-| `/catalog/categories` | Catalog | Category tree and admin writes |
-| `/catalog/offers` | Catalog | Discounts |
+| `/catalog/categories` | Catalog | Category tree, single category read and admin writes |
+| `/catalog/offers` | Catalog | Offer list, single offer read, create, edit and soft delete |
 | `/carts` | Ordering | Server cart for signed-in shoppers, local cart merge |
 | `/checkout` | Ordering | Place an order, guest or signed in |
 | `/orders` | Ordering | Customer order history, admin order management |
-| `/audit-trails` | Auditing | Read-only, admin |
+| `/audit-trails` | Auditing | Read-only, keyset-paginated, filterable by action, module, entity, user, screen, text and date |
 | `/dashboard` | Host | Cross-module composition over Contracts |
 
 ---

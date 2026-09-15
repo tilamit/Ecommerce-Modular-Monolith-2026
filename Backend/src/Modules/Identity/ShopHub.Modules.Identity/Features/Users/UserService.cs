@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Identity.Domain;
 using ShopHub.Modules.Identity.Infrastructure;
 using ShopHub.Modules.Identity.Persistence;
@@ -10,7 +11,11 @@ using ShopHub.Shared.Kernel.Paging;
 namespace ShopHub.Modules.Identity.Features.Users;
 
 /// <summary>User administration (spec §9.1).</summary>
-internal sealed class UserService(IdentityDbContext db, IPasswordService passwords, IPermissionService permissions)
+internal sealed class UserService(
+    IdentityDbContext db,
+    IPasswordService passwords,
+    IPermissionService permissions,
+    IAuditWriter audit)
 {
     /// <summary>
     /// Sortable columns, whitelisted (spec §6.5). A client string never reaches
@@ -93,8 +98,13 @@ internal sealed class UserService(IdentityDbContext db, IPasswordService passwor
 
         user.ReplaceRoles(request.RoleIds);
 
+        var roleNames = await RoleNamesAsync(request.RoleIds, cancellationToken);
+
         db.Users.Add(user);
         await db.SaveChangesAsync(cancellationToken);
+
+        // The insert entry holds the user's own columns; the roles live in link rows.
+        WriteRolesChange(user, before: [], after: roleNames);
 
         return await GetUserByIdAsync(user.Id, cancellationToken);
     }
@@ -168,14 +178,44 @@ internal sealed class UserService(IdentityDbContext db, IPasswordService passwor
             .FirstOrDefaultAsync(u => u.Id == id, cancellationToken)
             ?? throw NotFoundException.For("User", id);
 
+        var before = await RoleNamesAsync([.. user.Roles.Select(r => r.RoleId)], cancellationToken);
+        var after = await RoleNamesAsync(roleIds, cancellationToken);
+
         user.ReplaceRoles(roleIds);
         await db.SaveChangesAsync(cancellationToken);
 
         // The user's effective permissions just changed; the cached set is now wrong.
         await permissions.InvalidateUserAsync(id, cancellationToken);
 
+        WriteRolesChange(user, before, after);
+
         return await GetUserByIdAsync(id, cancellationToken);
     }
+
+    /// <summary>
+    /// A user's roles are link rows, so a change to them is written as one entry holding the
+    /// role names before and after, named by the user's full name and email.
+    /// </summary>
+    private void WriteRolesChange(User user, IReadOnlyList<string> before, IReadOnlyList<string> after) =>
+        audit.WriteListChange(
+            AuditAction.PermissionChange,
+            "identity",
+            nameof(User),
+            user.Id,
+            "User",
+            $"{user.FullName} ({user.Email})",
+            "Roles",
+            before,
+            after);
+
+    private async Task<IReadOnlyList<string>> RoleNamesAsync(
+        IReadOnlyCollection<Guid> roleIds,
+        CancellationToken cancellationToken) =>
+        await db.Roles
+            .Where(r => roleIds.Contains(r.Id))
+            .OrderBy(r => r.Name)
+            .Select(r => r.Name)
+            .ToListAsync(cancellationToken);
 
     internal async Task<UserDetail> UpdateMyProfileAsync(
         Guid userId,

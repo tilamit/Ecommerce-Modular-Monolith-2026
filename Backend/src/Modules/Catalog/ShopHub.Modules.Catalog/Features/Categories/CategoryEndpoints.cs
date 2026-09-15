@@ -3,7 +3,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Catalog.Infrastructure;
+using ShopHub.Modules.Catalog.Persistence;
+using ShopHub.Shared.Infrastructure.Auditing;
 using ShopHub.Shared.Infrastructure.RateLimiting;
 using ShopHub.Shared.Infrastructure.Security;
 using ShopHub.Shared.Kernel.Paging;
@@ -26,6 +29,10 @@ internal static class CategoryEndpoints
                 .Tag(Infrastructure.OutputCacheTags.Categories));
 
         group.MapGet("/", GetCategoriesAsync)
+            .RequireAuthorization(Permissions.CategoriesRead)
+            .RequireRateLimiting(RateLimitPolicies.Authenticated);
+
+        group.MapGet("/{id:guid}", GetCategoryAsync)
             .RequireAuthorization(Permissions.CategoriesRead)
             .RequireRateLimiting(RateLimitPolicies.Authenticated);
 
@@ -59,6 +66,24 @@ internal static class CategoryEndpoints
         string? sort = null,
         string? search = null) =>
         Results.Ok(await categories.GetCategoriesAsync(new PagedRequest(page, pageSize, sort, search), cancellationToken));
+
+    /// <summary>One category, as the edit form loads it. Opening it is recorded as a read.</summary>
+    private static async Task<IResult> GetCategoryAsync(
+        Guid id,
+        CategoryService categories,
+        IAuditWriter audit,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        var category = await categories.GetCategoryAsync(id, cancellationToken);
+
+        if (http.ShouldRecordRead())
+        {
+            audit.WriteRead(CatalogDbContext.Schema, "Category", category.Id);
+        }
+
+        return Results.Ok(category);
+    }
 
     private static async Task<IResult> CreateAsync(
         CreateCategoryRequest request,

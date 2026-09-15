@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Identity.Domain;
-using ShopHub.Modules.Identity.Features.Access;
 using ShopHub.Modules.Identity.Infrastructure;
 using ShopHub.Modules.Identity.Persistence;
 using ShopHub.Shared.Infrastructure.Persistence;
@@ -173,7 +172,16 @@ internal sealed class RoleService(IdentityDbContext db, IPermissionService permi
         // per-user cache is cleared wholesale rather than user by user.
         await permissions.InvalidateAllAsync(cancellationToken);
 
-        AccessChangeAudit.Write(audit, role, AccessChangeAudit.PermissionsField, before, after);
+        audit.WriteListChange(
+            AuditAction.PermissionChange,
+            "identity",
+            nameof(Role),
+            role.Id,
+            "Role",
+            role.Name,
+            "Permissions",
+            before,
+            after);
     }
 
     private async Task<IReadOnlyList<string>> PermissionCodesAsync(

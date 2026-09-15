@@ -115,6 +115,23 @@ internal sealed class CategoryService(CatalogDbContext db, HybridCache cache, IC
         return new PagedResult<CategoryListItem>(items, request.Page, request.PageSize, total);
     }
 
+    /// <summary>A single category, active or not, for the admin edit form.</summary>
+    internal async Task<CategoryListItem> GetCategoryAsync(Guid id, CancellationToken cancellationToken) =>
+        await db.Categories
+            .Where(c => c.Id == id)
+            .Select(c => new CategoryListItem(
+                c.Id,
+                c.ParentId,
+                c.Name,
+                c.Slug,
+                c.Description,
+                c.ImageUrl,
+                c.DisplayOrder,
+                c.IsActive,
+                db.Products.Count(p => p.CategoryId == c.Id)))
+            .FirstOrDefaultAsync(cancellationToken)
+        ?? throw NotFoundException.For("Category", id);
+
     internal async Task<CategoryListItem> CreateAsync(CreateCategoryRequest request, CancellationToken cancellationToken)
     {
         var slug = Category.Slugify(request.Slug ?? request.Name);

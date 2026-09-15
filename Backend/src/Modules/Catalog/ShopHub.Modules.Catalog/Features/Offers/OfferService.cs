@@ -3,8 +3,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Catalog.Domain;
 using ShopHub.Modules.Catalog.Persistence;
+using ShopHub.Shared.Infrastructure.Auditing;
 using ShopHub.Shared.Infrastructure.Persistence;
 using ShopHub.Shared.Infrastructure.RateLimiting;
 using ShopHub.Shared.Infrastructure.Security;
@@ -42,7 +44,7 @@ internal sealed record SaveOfferRequest(
     IReadOnlyList<Guid>? ProductIds);
 
 /// <summary>Discount offers (spec §9.2).</summary>
-internal sealed class OfferService(CatalogDbContext db, IClock clock)
+internal sealed class OfferService(CatalogDbContext db, IClock clock, IAuditWriter audit)
 {
     internal async Task<PagedResult<OfferListItem>> GetOffersAsync(PagedRequest paging, CancellationToken cancellationToken)
     {
@@ -105,12 +107,14 @@ internal sealed class OfferService(CatalogDbContext db, IClock clock)
             request.MinimumOrderAmount,
             request.MaxRedemptions);
 
-        await ApplyProductsAsync(offer, request.ProductIds, cancellationToken);
+        var products = await ApplyProductsAsync(offer, request.ProductIds, cancellationToken);
 
         db.Offers.Add(offer);
         await db.SaveChangesAsync(cancellationToken);
 
-        return await GetOneAsync(offer.Id, cancellationToken);
+        WriteProductsChange(offer, products);
+
+        return await GetOfferAsync(offer.Id, cancellationToken);
     }
 
     internal async Task<OfferListItem> UpdateAsync(Guid id, SaveOfferRequest request, CancellationToken cancellationToken)
@@ -139,28 +143,40 @@ internal sealed class OfferService(CatalogDbContext db, IClock clock)
             request.MaxRedemptions,
             request.IsActive);
 
-        await ApplyProductsAsync(offer, request.ProductIds, cancellationToken);
+        var products = await ApplyProductsAsync(offer, request.ProductIds, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
-        return await GetOneAsync(id, cancellationToken);
+        WriteProductsChange(offer, products);
+
+        return await GetOfferAsync(id, cancellationToken);
     }
 
+    /// <summary>
+    /// Soft delete. The remove is turned into <c>IsDeleted = true</c> by the persistence
+    /// interceptor, so the offer disappears from every list while its row stays for the audit
+    /// trail and for any order that recorded its code. The code becomes free for a new offer.
+    /// </summary>
     internal async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
         var offer = await db.Offers.AsTracking().FirstOrDefaultAsync(o => o.Id == id, cancellationToken)
             ?? throw NotFoundException.For("Offer", id);
 
-        // Offers are hard-deleted: unlike products they are not referenced by historical
-        // orders, which snapshot the applied code as text rather than as a foreign key.
         db.Offers.Remove(offer);
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task ApplyProductsAsync(Offer offer, IReadOnlyList<Guid>? productIds, CancellationToken cancellationToken)
+    /// <summary>
+    /// Replaces the products an offer is limited to and returns their names before and after,
+    /// or null when the request left the products untouched.
+    /// </summary>
+    private async Task<(IReadOnlyList<string> Before, IReadOnlyList<string> After)?> ApplyProductsAsync(
+        Offer offer,
+        IReadOnlyList<Guid>? productIds,
+        CancellationToken cancellationToken)
     {
         if (productIds is null)
         {
-            return;
+            return null;
         }
 
         if (productIds.Count > 0)
@@ -173,21 +189,49 @@ internal sealed class OfferService(CatalogDbContext db, IClock clock)
             }
         }
 
+        var before = await ProductNamesAsync([.. offer.Products.Select(p => p.ProductId)], cancellationToken);
+        var after = await ProductNamesAsync(productIds, cancellationToken);
+
         offer.ReplaceProducts(productIds);
+
+        return (before, after);
     }
 
-    private async Task<OfferListItem> GetOneAsync(Guid id, CancellationToken cancellationToken)
+    /// <summary>
+    /// The products an offer applies to are link rows, so a change to them is written as one
+    /// entry with the product names before and after.
+    /// </summary>
+    private void WriteProductsChange(Offer offer, (IReadOnlyList<string> Before, IReadOnlyList<string> After)? products)
     {
-        var page = await GetOffersAsync(new PagedRequest(1, 1), cancellationToken);
-        var found = page.Items.FirstOrDefault(o => o.Id == id);
-
-        if (found is not null)
+        if (products is not { } change)
         {
-            return found;
+            return;
         }
 
-        // The list is ordered by start date, so a newly created offer is not necessarily on
-        // page 1. Fall back to a direct read rather than paging through.
+        audit.WriteListChange(
+            AuditAction.Update,
+            CatalogDbContext.Schema,
+            nameof(Offer),
+            offer.Id,
+            "Offer",
+            offer.Code,
+            "Products",
+            change.Before,
+            change.After);
+    }
+
+    private async Task<IReadOnlyList<string>> ProductNamesAsync(
+        IReadOnlyCollection<Guid> productIds,
+        CancellationToken cancellationToken) =>
+        await db.Products
+            .Where(p => productIds.Contains(p.Id))
+            .OrderBy(p => p.Name)
+            .Select(p => p.Name)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>A single offer, for the admin edit form.</summary>
+    internal async Task<OfferListItem> GetOfferAsync(Guid id, CancellationToken cancellationToken)
+    {
         var now = clock.UtcNow;
 
         return await db.Offers
@@ -226,6 +270,8 @@ internal static class OfferEndpoints
 
         group.MapGet("/", GetOffersAsync).RequireAuthorization(Permissions.OffersRead);
 
+        group.MapGet("/{id:guid}", GetOfferAsync).RequireAuthorization(Permissions.OffersRead);
+
         group.MapPost("/", CreateAsync)
             .RequireAuthorization(Permissions.OffersWrite)
             .RequireRateLimiting(RateLimitPolicies.Write);
@@ -249,6 +295,24 @@ internal static class OfferEndpoints
         string? sort = null,
         string? search = null) =>
         Results.Ok(await offers.GetOffersAsync(new PagedRequest(page, pageSize, sort, search), cancellationToken));
+
+    /// <summary>One offer, as the edit form loads it. Opening it is recorded as a read.</summary>
+    private static async Task<IResult> GetOfferAsync(
+        Guid id,
+        OfferService offers,
+        IAuditWriter audit,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        var offer = await offers.GetOfferAsync(id, cancellationToken);
+
+        if (http.ShouldRecordRead())
+        {
+            audit.WriteRead(CatalogDbContext.Schema, "Offer", offer.Id);
+        }
+
+        return Results.Ok(offer);
+    }
 
     private static async Task<IResult> CreateAsync(
         SaveOfferRequest request,

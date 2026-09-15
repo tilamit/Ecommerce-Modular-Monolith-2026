@@ -3,7 +3,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Catalog.Infrastructure;
+using ShopHub.Modules.Catalog.Persistence;
+using ShopHub.Shared.Infrastructure.Auditing;
 using ShopHub.Shared.Infrastructure.RateLimiting;
 using ShopHub.Shared.Infrastructure.Security;
 using ShopHub.Shared.Kernel.Paging;
@@ -115,8 +118,19 @@ internal static class ProductEndpoints
     private static async Task<IResult> GetProductAsync(
         string idOrSlug,
         ProductService products,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await products.GetProductAsync(idOrSlug, cancellationToken));
+        IAuditWriter audit,
+        HttpContext http,
+        CancellationToken cancellationToken)
+    {
+        var product = await products.GetProductAsync(idOrSlug, cancellationToken);
+
+        if (http.ShouldRecordRead())
+        {
+            audit.WriteRead(CatalogDbContext.Schema, "Product", product.Id);
+        }
+
+        return Results.Ok(product);
+    }
 
     /// <summary>
     /// Accepts one or more images in a single multipart request, so attaching a set to a

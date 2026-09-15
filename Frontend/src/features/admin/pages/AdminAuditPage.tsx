@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchAuditEntry, fetchAuditTrail, type AuditListItem } from '../api';
+import { fetchAuditEntry, fetchAuditTrail, type AuditListItem, type UserListItem } from '../api';
 import { Button } from '../../../shared/components/ui/Button';
 import { EmptyState, ErrorState, Skeleton } from '../../../shared/components/ui/States';
 import { DataTable, type Column } from '../../../shared/components/ui/DataTable';
 import { formatDateTime } from '../../../shared/lib/format';
 import { useListParams } from '../../../shared/hooks/useListParams';
 import { AuditFieldValue } from '../components/AuditFieldValue';
+import { UserPicker } from '../components/UserPicker';
 
-const ACTIONS = ['Insert', 'Update', 'Delete', 'Login', 'LoginFailed', 'Logout', 'Export', 'PermissionChange'];
+const ACTIONS = ['Insert', 'Read', 'Update', 'Delete', 'PermissionChange', 'Login', 'LoginFailed', 'Logout', 'Export'];
 
 const detailId = (id: number) => `audit-detail-${id}`;
 
@@ -129,17 +130,22 @@ export const AdminAuditPage = () => {
 
   const action = searchParams.get('action') ?? '';
   const module = searchParams.get('module') ?? '';
+  const userId = searchParams.get('user') ?? '';
+
+  // Remembered so the picker keeps showing the chosen user while its search box is narrowed.
+  const [filterUser, setFilterUser] = useState<UserListItem | null>(null);
 
   const cursor = cursors[cursors.length - 1];
 
   const query = useQuery({
-    queryKey: ['admin', 'audit', cursor, action, module, params.search],
+    queryKey: ['admin', 'audit', cursor, action, module, userId, params.search],
     queryFn: ({ signal }) => {
       const search = new URLSearchParams({ pageSize: '25' });
 
       if (cursor !== null) search.set('cursor', cursor);
       if (action !== '') search.set('action', action);
       if (module !== '') search.set('module', module);
+      if (userId !== '') search.set('userId', userId);
       if (params.search !== undefined) search.set('search', params.search);
 
       return fetchAuditTrail(search, signal);
@@ -225,6 +231,19 @@ export const AdminAuditPage = () => {
               ))}
             </select>
           </label>
+
+          <UserPicker
+            variant="filter"
+            label="User"
+            emptyLabel="All users"
+            value={userId}
+            selected={filterUser}
+            onChange={(chosen) => {
+              setFilterUser(chosen);
+              resetPaging();
+              update({ user: chosen?.id ?? '' });
+            }}
+          />
         </div>
       </div>
 

@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { createCategory, updateCategory, type CategoryListItem, type CategoryWriteRequest } from '../api';
+import {
+  createCategory,
+  fetchCategory,
+  updateCategory,
+  type CategoryListItem,
+  type CategoryWriteRequest,
+} from '../api';
 import { Button } from '../../../shared/components/ui/Button';
 import { Input, Select } from '../../../shared/components/ui/Field';
 import { Modal } from '../../../shared/components/ui/Modal';
@@ -20,9 +26,10 @@ const orNull = (value: string) => (value.trim() === '' ? null : value.trim());
 /**
  * Create and edit for a category.
  *
- * The list row carries every editable field, so unlike the product form this needs no
- * detail fetch. The parent list excludes the category being edited: a category that is its
- * own parent is a cycle the tree builder would recurse on forever.
+ * Editing loads the category from the API rather than reusing the list row, so the form shows
+ * what is stored now and opening it is recorded in the audit trail as a read. The parent list
+ * excludes the category being edited: a category that is its own parent is a cycle the tree
+ * builder would recurse on forever.
  */
 export const CategoryFormModal = ({ open, category, categories, onClose, onSaved }: CategoryFormModalProps) => {
   const { show } = useToast();
@@ -33,6 +40,7 @@ export const CategoryFormModal = ({ open, category, categories, onClose, onSaved
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [displayOrder, setDisplayOrder] = useState('0');
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,14 +51,31 @@ export const CategoryFormModal = ({ open, category, categories, onClose, onSaved
       return;
     }
 
+    const fill = (source: CategoryListItem | null) => {
+      setName(source?.name ?? '');
+      setSlug(source?.slug ?? '');
+      setParentId(source?.parentId ?? '');
+      setDescription(source?.description ?? '');
+      setImageUrl(source?.imageUrl ?? '');
+      setDisplayOrder(String(source?.displayOrder ?? 0));
+    };
+
     setError(null);
-    setName(category?.name ?? '');
-    setSlug(category?.slug ?? '');
-    setParentId(category?.parentId ?? '');
-    setDescription(category?.description ?? '');
-    setImageUrl(category?.imageUrl ?? '');
-    setDisplayOrder(String(category?.displayOrder ?? 0));
-  }, [open, category]);
+
+    if (category === null) {
+      fill(null);
+      return;
+    }
+
+    setIsLoading(true);
+
+    fetchCategory(category.id)
+      .then(fill)
+      .catch(() => setError('That category could not be loaded.'))
+      .finally(() => setIsLoading(false));
+    // `category.id` identifies the row; the object is rebuilt on every render of the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, category?.id]);
 
   const submit = async () => {
     setIsSaving(true);
@@ -92,7 +117,7 @@ export const CategoryFormModal = ({ open, category, categories, onClose, onSaved
           <Button variant="secondary" size="sm" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => void submit()} isLoading={isSaving} disabled={name.trim() === ''}>
+          <Button size="sm" onClick={() => void submit()} isLoading={isSaving} disabled={isLoading || name.trim() === ''}>
             {isEdit ? 'Save changes' : 'Create category'}
           </Button>
         </>

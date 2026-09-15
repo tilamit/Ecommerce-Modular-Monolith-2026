@@ -38,9 +38,17 @@ internal sealed class CatalogSeeder(CatalogDbContext db, IClock clock, ILogger<C
 
     private async Task<Dictionary<string, Category>> SeedCategoriesAsync(CancellationToken cancellationToken)
     {
-        var existing = await db.Categories
+        // Deleted categories count as existing, so a category an administrator deleted is not
+        // recreated on the next start. Where a name exists twice, the live row wins.
+        var all = await db.Categories
+            .IgnoreQueryFilters()
             .AsTracking()
-            .ToDictionaryAsync(c => c.Name, StringComparer.Ordinal, cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        var existing = all
+            .OrderBy(c => c.IsDeleted)
+            .GroupBy(c => c.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
         var order = 0;
 
@@ -54,6 +62,12 @@ internal sealed class CatalogSeeder(CatalogDbContext db, IClock clock, ILogger<C
             }
 
             order += 10;
+
+            // Nothing is seeded under a deleted parent: the children would be unreachable.
+            if (parent.IsDeleted)
+            {
+                continue;
+            }
 
             // Saved before the children so the parent has a resolved id to reference.
             await db.SaveChangesAsync(cancellationToken);
@@ -81,7 +95,9 @@ internal sealed class CatalogSeeder(CatalogDbContext db, IClock clock, ILogger<C
 
     private async Task SeedProductsAsync(Dictionary<string, Category> categories, CancellationToken cancellationToken)
     {
-        var currentCount = await db.Products.CountAsync(cancellationToken);
+        // Deleted products are counted, so deleting one does not make the next start seed a
+        // replacement to get back to the target.
+        var currentCount = await db.Products.IgnoreQueryFilters().CountAsync(cancellationToken);
 
         if (currentCount >= TargetProductCount)
         {
@@ -90,7 +106,7 @@ internal sealed class CatalogSeeder(CatalogDbContext db, IClock clock, ILogger<C
 
         // Only leaf categories get products, so the tree has a realistic shape.
         var leaves = categories.Values
-            .Where(c => c.ParentId is not null)
+            .Where(c => c.ParentId is not null && !c.IsDeleted)
             .OrderBy(c => c.Name, StringComparer.Ordinal)
             .ToArray();
 
@@ -101,7 +117,7 @@ internal sealed class CatalogSeeder(CatalogDbContext db, IClock clock, ILogger<C
 
         var random = new Random(RandomSeed);
         var now = clock.UtcNow;
-        var existingSkus = await db.Products.Select(p => p.Sku).ToListAsync(cancellationToken);
+        var existingSkus = await db.Products.IgnoreQueryFilters().Select(p => p.Sku).ToListAsync(cancellationToken);
         var skus = existingSkus.ToHashSet(StringComparer.Ordinal);
 
         for (var i = currentCount; i < TargetProductCount; i++)
@@ -170,7 +186,8 @@ internal sealed class CatalogSeeder(CatalogDbContext db, IClock clock, ILogger<C
             ("SUMMER20", "Expired summer sale", DiscountType.Percentage, 20m, now.AddDays(-90), now.AddDays(-30), null),
         };
 
-        var existing = await db.Offers.Select(o => o.Code).ToListAsync(cancellationToken);
+        // Deleted offers count as existing, so a seeded offer that was deleted stays deleted.
+        var existing = await db.Offers.IgnoreQueryFilters().Select(o => o.Code).ToListAsync(cancellationToken);
         var codes = existing.ToHashSet(StringComparer.Ordinal);
 
         foreach (var (code, name, type, value, start, end, minimum) in definitions)

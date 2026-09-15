@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using ShopHub.Modules.Auditing.Contracts;
+using ShopHub.Modules.Identity.Domain;
 using ShopHub.Modules.Identity.Infrastructure;
 using ShopHub.Modules.Identity.Persistence;
 using ShopHub.Shared.Infrastructure.RateLimiting;
@@ -118,7 +119,16 @@ internal sealed class AccessService(IdentityDbContext db, IMenuService menus, IA
         // The sidebar is cached per role set; revoking a menu must show up on next sign-in.
         await menus.InvalidateAsync(cancellationToken);
 
-        AccessChangeAudit.Write(audit, role, AccessChangeAudit.MenusField, before, after);
+        audit.WriteListChange(
+            AuditAction.PermissionChange,
+            "identity",
+            nameof(Role),
+            role.Id,
+            "Role",
+            role.Name,
+            "Menus",
+            before,
+            after);
     }
 
     private async Task<IReadOnlyList<string>> VisibleMenuTitlesAsync(

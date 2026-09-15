@@ -14,6 +14,9 @@ public enum AuditAction
     Logout = 6,
     Export = 7,
     PermissionChange = 8,
+
+    /// <summary>A signed-in user opened a single record, such as a product or their profile.</summary>
+    Read = 9,
 }
 
 /// <summary>

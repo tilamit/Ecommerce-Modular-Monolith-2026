@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -348,29 +348,80 @@ const profileSchema = z.object({
 
 type ProfileForm = z.infer<typeof profileSchema>;
 
-/** Profile (spec §9.1 `/users/me/profile`). Email and roles are deliberately not editable here. */
+/** The profile as `/users/me/profile` returns it. */
+interface ProfileDetail {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber?: string | null;
+}
+
+const PROFILE_KEY = ['account', 'profile'] as const;
+
+/**
+ * Profile (spec §9.1 `/users/me/profile`). Email and roles are deliberately not editable here.
+ *
+ * The form is filled from the API rather than from the signed-in session, so it always shows
+ * what is stored and opening the page is recorded in the audit trail as a read. Saving is
+ * recorded as an update with the fields that changed.
+ */
 export const AccountProfilePage = () => {
   const user = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
+  const queryClient = useQueryClient();
   const { show } = useToast();
+
+  const profileQuery = useQuery({
+    queryKey: PROFILE_KEY,
+    queryFn: ({ signal }) => api.get<ProfileDetail>('/api/v1/users/me/profile', { signal }),
+    staleTime: 0,
+  });
 
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
-    defaultValues: {
-      firstName: user?.firstName ?? '',
-      lastName: user?.lastName ?? '',
-      phoneNumber: user?.phoneNumber ?? '',
-    },
+    defaultValues: { firstName: '', lastName: '', phoneNumber: '' },
   });
 
+  const profile = profileQuery.data;
+
+  useEffect(() => {
+    if (profile !== undefined) {
+      form.reset({ firstName: profile.firstName, lastName: profile.lastName, phoneNumber: profile.phoneNumber ?? '' });
+    }
+    // `form` is stable for the life of the component; the profile arriving is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
   const mutation = useMutation({
-    mutationFn: (values: ProfileForm) => api.put<UserProfile>('/api/v1/users/me/profile', values),
+    mutationFn: (values: ProfileForm) => api.put<ProfileDetail>('/api/v1/users/me/profile', values),
     onSuccess: (updated) => {
-      setUser({ ...updated, permissions: user?.permissions ?? [], roles: user?.roles ?? [] });
+      queryClient.setQueryData(PROFILE_KEY, updated);
+
+      if (user !== null) {
+        const next: UserProfile = {
+          ...user,
+          firstName: updated.firstName,
+          lastName: updated.lastName,
+          fullName: `${updated.firstName} ${updated.lastName}`.trim(),
+          phoneNumber: updated.phoneNumber ?? null,
+        };
+
+        setUser(next);
+      }
+
       show({ tone: 'success', message: 'Profile updated.' });
     },
     onError: () => show({ tone: 'error', message: 'Could not save your profile.' }),
   });
+
+  if (profileQuery.isPending) {
+    return <Skeleton className="h-80 w-full max-w-md" />;
+  }
+
+  if (profileQuery.isError) {
+    return <ErrorState onRetry={() => void profileQuery.refetch()} />;
+  }
 
   return (
     <div className="max-w-md">
@@ -382,7 +433,7 @@ export const AccountProfilePage = () => {
       >
         <Input
           label="Email"
-          value={user?.email ?? ''}
+          value={profileQuery.data.email}
           readOnly
           disabled
           hint="Contact support to change the email on your account."

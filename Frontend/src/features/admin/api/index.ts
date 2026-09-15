@@ -53,6 +53,13 @@ export const fetchUsers = (params: URLSearchParams, signal?: AbortSignal) =>
 export const setUserStatus = (id: string, isActive: boolean) =>
   api.patch<void>(`/api/v1/users/${id}/status`, { isActive });
 
+/** Replaces the roles a user holds. The change is recorded in the audit trail with the role names before and after. */
+export const setUserRoles = (id: string, roleIds: string[]) =>
+  api.put<void>(`/api/v1/users/${id}/roles`, { roleIds });
+
+/** How a user is named in every picker: full name and email, since two people can share a name. */
+export const userLabel = (user: Pick<UserListItem, 'fullName' | 'email'>) => `${user.fullName} (${user.email})`;
+
 // --- roles and access ------------------------------------------------------
 
 export interface RoleListItem {
@@ -198,6 +205,10 @@ export interface CategoryListItem {
 export const fetchCategories = (params: URLSearchParams, signal?: AbortSignal) =>
   api.get<PagedResult<CategoryListItem>>(`/api/v1/catalog/categories?${params}`, { signal });
 
+/** One category. Opening it is recorded in the audit trail as a read. */
+export const fetchCategory = (id: string, signal?: AbortSignal) =>
+  api.get<CategoryListItem>(`/api/v1/catalog/categories/${id}`, { signal });
+
 export interface OfferListItem {
   id: string;
   code: string;
@@ -215,6 +226,33 @@ export interface OfferListItem {
 
 export const fetchOffers = (params: URLSearchParams, signal?: AbortSignal) =>
   api.get<PagedResult<OfferListItem>>(`/api/v1/catalog/offers?${params}`, { signal });
+
+/** One offer. Opening it is recorded in the audit trail as a read. */
+export const fetchOffer = (id: string, signal?: AbortSignal) =>
+  api.get<OfferListItem>(`/api/v1/catalog/offers/${id}`, { signal });
+
+export type DiscountType = 'Percentage' | 'FixedAmount';
+
+export interface OfferWriteRequest {
+  code: string;
+  name: string;
+  discountType: DiscountType;
+  discountValue: number;
+  startUtc: string;
+  endUtc: string;
+  minimumOrderAmount: number | null;
+  maxRedemptions: number | null;
+  isActive: boolean;
+}
+
+export const createOffer = (request: OfferWriteRequest) =>
+  api.post<OfferListItem>('/api/v1/catalog/offers', request);
+
+export const updateOffer = (id: string, request: OfferWriteRequest) =>
+  api.put<OfferListItem>(`/api/v1/catalog/offers/${id}`, request);
+
+/** Soft delete: the offer leaves every list but its row is kept and its code can be reused. */
+export const deleteOffer = (id: string) => api.delete<void>(`/api/v1/catalog/offers/${id}`);
 
 // --- audit trail -----------------------------------------------------------
 

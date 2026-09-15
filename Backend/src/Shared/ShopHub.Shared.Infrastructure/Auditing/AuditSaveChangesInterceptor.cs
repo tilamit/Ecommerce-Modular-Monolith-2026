@@ -82,6 +82,7 @@ public sealed class AuditSaveChangesInterceptor(
             var action = entry.State switch
             {
                 EntityState.Added => "Insert",
+                EntityState.Modified when IsSoftDelete(entry) => "Delete",
                 EntityState.Modified => "Update",
                 EntityState.Deleted => "Delete",
                 _ => null,
@@ -188,6 +189,24 @@ public sealed class AuditSaveChangesInterceptor(
         }
 
         _pending.Clear();
+    }
+
+    /// <summary>
+    /// A soft delete reaches this interceptor as an update, because
+    /// <c>AuditableEntityInterceptor</c> runs first and turns the removal into
+    /// <c>IsDeleted = true</c>. It is recorded as the delete it is, with the flag change as
+    /// its values, so the trail reads the way the user acted.
+    /// </summary>
+    private static bool IsSoftDelete(EntityEntry entry)
+    {
+        if (entry.Entity is not ISoftDeletable)
+        {
+            return false;
+        }
+
+        var flag = entry.Property(nameof(ISoftDeletable.IsDeleted));
+
+        return flag.IsModified && flag.CurrentValue is true && flag.OriginalValue is false;
     }
 
     private static bool IsRedacted(EntityEntry entry, string propertyName) =>

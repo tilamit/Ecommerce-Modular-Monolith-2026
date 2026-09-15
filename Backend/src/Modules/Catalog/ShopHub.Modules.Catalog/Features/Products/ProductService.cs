@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
+using ShopHub.Modules.Auditing.Contracts;
 using ShopHub.Modules.Catalog.Domain;
 using ShopHub.Modules.Catalog.Infrastructure;
 using ShopHub.Modules.Catalog.Persistence;
@@ -17,7 +18,8 @@ internal sealed class ProductService(
     CatalogDbContext db,
     HybridCache cache,
     ICatalogCacheInvalidator invalidator,
-    IClock clock)
+    IClock clock,
+    IAuditWriter audit)
 {
     /// <summary>Typeahead returns at most this many rows (spec §9.2).</summary>
     private const int SuggestionLimit = 10;
@@ -179,6 +181,8 @@ internal sealed class ProductService(
         await db.SaveChangesAsync(cancellationToken);
         await invalidator.InvalidateProductsAsync(cancellationToken);
 
+        WriteImagesChange(product, before: [], after: DescribeImages(product.Images));
+
         return await QueryProductAsync(product.Id.ToString(), cancellationToken)
             ?? throw NotFoundException.For("Product", product.Id);
     }
@@ -205,10 +209,14 @@ internal sealed class ProductService(
             request.StockQuantity,
             request.IsFeatured);
 
+        var imagesBefore = DescribeImages(product.Images);
+
         ApplyImages(product, request.Images);
 
         await db.SaveChangesAsync(cancellationToken);
         await invalidator.InvalidateProductsAsync(cancellationToken);
+
+        WriteImagesChange(product, imagesBefore, DescribeImages(product.Images));
 
         return await QueryProductAsync(id.ToString(), cancellationToken) ?? throw NotFoundException.For("Product", id);
     }
@@ -425,6 +433,28 @@ internal sealed class ProductService(
             ? new ConflictException("sku_taken", $"A product with SKU '{normalizedSku}' already exists.")
             : new ConflictException("slug_taken", $"A product with slug '{slug}' already exists.");
     }
+
+    /// <summary>
+    /// Images are child rows that are replaced as a set on every save, so the change-tracking
+    /// capture would record every image as deleted and re-added even when nothing changed.
+    /// The product's image list is compared instead and written as one entry when it differs.
+    /// </summary>
+    private void WriteImagesChange(Product product, IReadOnlyList<string> before, IReadOnlyList<string> after) =>
+        audit.WriteListChange(
+            AuditAction.Update,
+            CatalogDbContext.Schema,
+            nameof(Product),
+            product.Id,
+            "Product",
+            product.Name,
+            "Images",
+            before,
+            after);
+
+    private static List<string> DescribeImages(IEnumerable<ProductImage> images) =>
+        [.. images
+            .OrderBy(i => i.DisplayOrder)
+            .Select(i => i.IsPrimary ? $"{i.Url} (primary)" : i.Url)];
 
     private static void ApplyImages(Product product, IReadOnlyList<ProductImageResponse>? images)
     {

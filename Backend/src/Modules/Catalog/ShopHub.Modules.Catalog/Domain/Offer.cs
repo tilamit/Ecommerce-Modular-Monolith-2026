@@ -15,7 +15,7 @@ internal enum DiscountType
 /// rather than at the call site, so an expired offer cannot be applied by a caller that
 /// forgot to check.
 /// </summary>
-internal sealed class Offer : AuditableEntity, IAuditableEntity
+internal sealed class Offer : AuditableEntity, ISoftDeletable, IAuditableEntity
 {
     private readonly List<ProductOffer> _products = [];
 
@@ -66,6 +66,14 @@ internal sealed class Offer : AuditableEntity, IAuditableEntity
     public int RedemptionCount { get; private set; }
 
     public bool IsActive { get; private set; }
+
+    /// <summary>
+    /// Deleting an offer only flags it, like products, categories and users. The row stays
+    /// for the audit trail and for any order that recorded its code.
+    /// </summary>
+    public bool IsDeleted { get; set; }
+
+    public DateTime? DeletedUtc { get; set; }
 
     /// <summary>An empty set means the offer applies cart-wide (spec §8.2).</summary>
     public IReadOnlyCollection<ProductOffer> Products => _products;

@@ -1,6 +1,11 @@
+import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation, keepPreviousData } from '@tanstack/react-query';
+import { UserCog } from 'lucide-react';
 import { fetchUsers, setUserStatus, type UserListItem } from '../api';
 import { ListPage } from '../components/ListPage';
+import { ChangeRoleModal } from '../components/ChangeRoleModal';
+import { hasPermission } from '../../../shared/api/authStore';
+import { Permissions } from '../../../shared/lib/permissions';
 import { useListParams } from '../../../shared/hooks/useListParams';
 import { Button } from '../../../shared/components/ui/Button';
 import { useToast } from '../../../shared/components/ui/Toast';
@@ -13,6 +18,15 @@ export const AdminUsersPage = () => {
   const { show } = useToast();
 
   const isActive = searchParams.get('isActive') ?? '';
+
+  const canManage = hasPermission(Permissions.UsersManage);
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [roleUser, setRoleUser] = useState<UserListItem | null>(null);
+
+  const openRoleModal = (user: UserListItem | null) => {
+    setRoleUser(user);
+    setIsRoleModalOpen(true);
+  };
 
   const query = useQuery({
     queryKey: ['admin', 'users', params, isActive],
@@ -72,22 +86,42 @@ export const AdminUsersPage = () => {
       key: 'actions',
       header: 'Actions',
       align: 'right',
-      render: (user) => (
-        <Button
-          variant="secondary"
-          size="sm"
-          isLoading={statusMutation.isPending && statusMutation.variables?.id === user.id}
-          onClick={() => statusMutation.mutate({ id: user.id, active: !user.isActive })}
-          aria-label={`${user.isActive ? 'Deactivate' : 'Activate'} ${user.fullName}`}
-        >
-          {user.isActive ? 'Deactivate' : 'Activate'}
-        </Button>
-      ),
+      render: (user) =>
+        canManage ? (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openRoleModal(user)}
+              aria-label={`Change the role of ${user.fullName}`}
+            >
+              Change role
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              isLoading={statusMutation.isPending && statusMutation.variables?.id === user.id}
+              onClick={() => statusMutation.mutate({ id: user.id, active: !user.isActive })}
+              aria-label={`${user.isActive ? 'Deactivate' : 'Activate'} ${user.fullName}`}
+            >
+              {user.isActive ? 'Deactivate' : 'Activate'}
+            </Button>
+          </div>
+        ) : null,
     },
   ];
 
   return (
+    <>
     <ListPage
+      actions={
+        canManage && (
+          <Button size="sm" onClick={() => openRoleModal(null)}>
+            <UserCog className="size-4" aria-hidden="true" />
+            Change role
+          </Button>
+        )
+      }
       title="Users"
       columns={columns}
       rowKey={(user) => user.id}
@@ -114,5 +148,15 @@ export const AdminUsersPage = () => {
         </label>
       }
     />
+
+    {canManage && (
+      <ChangeRoleModal
+        open={isRoleModalOpen}
+        user={roleUser}
+        onClose={() => setIsRoleModalOpen(false)}
+        onSaved={() => void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })}
+      />
+    )}
+    </>
   );
 };

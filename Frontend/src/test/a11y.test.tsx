@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
 import axe from 'axe-core';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { ReactElement } from 'react';
 import { Button } from '../shared/components/ui/Button';
 import { Input, Select } from '../shared/components/ui/Field';
 import { Pagination } from '../shared/components/ui/Pagination';
 import { EmptyState, ErrorState } from '../shared/components/ui/States';
 import { DataTable, StatusBadge } from '../shared/components/ui/DataTable';
+import { QuantityStepper } from '../shared/components/ui/QuantityStepper';
+import { NewTabLink } from '../shared/components/ui/NewTabLink';
 
 /**
  * Automated accessibility checks on the shared UI kit (spec §14 Phase 11).
@@ -144,5 +147,34 @@ describe('UI kit accessibility', () => {
     expect(headers[0].getAttribute('aria-sort')).toBe('descending');
     // A non-sortable column must not claim a sort state at all.
     expect(headers[1].getAttribute('aria-sort')).toBeNull();
+  });
+
+  it('NewTabLink has a name that survives its icon', async () => {
+    const router = createMemoryRouter(
+      [{ path: '/', element: <NewTabLink to="/products/8e2f" label="Blue Mug" /> }],
+      { initialEntries: ['/'] },
+    );
+
+    const violations = await check(<RouterProvider router={router} />);
+
+    expect(violations, describeViolations(violations)).toEqual([]);
+  });
+
+  it('QuantityStepper names its group and both icon buttons', async () => {
+    const violations = await check(
+      <div>
+        <QuantityStepper value={1} onChange={() => {}} max={5} label="Quantity" />
+        <QuantityStepper
+          value={3}
+          onChange={() => {}}
+          max={3}
+          label="Quantity for Blue Mug"
+          decreaseLabel="Decrease quantity of Blue Mug"
+          increaseLabel="Increase quantity of Blue Mug"
+        />
+      </div>,
+    );
+
+    expect(violations, describeViolations(violations)).toEqual([]);
   });
 });

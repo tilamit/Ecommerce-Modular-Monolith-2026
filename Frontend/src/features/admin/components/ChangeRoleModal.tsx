@@ -112,6 +112,9 @@ export const ChangeRoleModal = ({ open, user, onClose, onSaved }: ChangeRoleModa
         )}
 
         <UserPicker
+          // The dialog stays mounted between openings, so the search box is reset by
+          // remounting it whenever the row it was opened from changes.
+          key={user?.id ?? 'toolbar'}
           label="User"
           value={selectedUser?.id ?? ''}
           selected={selectedUser}

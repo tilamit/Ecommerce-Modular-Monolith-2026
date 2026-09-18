@@ -51,7 +51,7 @@ public class ShopHubApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                 ["ConnectionStrings:ShopHub"] = ConnectionString,
 
                 // An explicit origin is mandatory once AllowCredentials is on (spec §11.5).
-                ["Cors:AllowedOrigins:0"] = "http://localhost:5173",
+                ["Cors:AllowedOrigins:0"] = "https://localhost:5173",
 
                 // A test-only key. Real deployments read this from user-secrets or the
                 // environment; the app refuses to start without one either way.

@@ -1,10 +1,12 @@
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react';
+import { ShoppingBag, Trash2 } from 'lucide-react';
 import { fetchServerCart, priceAnonymousCart, removeServerCartItem, setServerCartQuantity } from '../api';
 import { useCartStore } from '../cartStore';
 import { useAuthStore } from '../../../shared/api/authStore';
 import { Button } from '../../../shared/components/ui/Button';
+import { NewTabLink } from '../../../shared/components/ui/NewTabLink';
+import { QuantityStepper } from '../../../shared/components/ui/QuantityStepper';
 import { EmptyState, ErrorState, Skeleton } from '../../../shared/components/ui/States';
 import { formatCurrency } from '../../../shared/lib/format';
 import type { Cart, SkippedLine } from '../../../shared/api/types';
@@ -144,7 +146,19 @@ export const CartPage = () => {
               className="flex flex-wrap items-center gap-4 rounded-card border border-border-subtle p-4"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-content">{line.name}</p>
+                {/* The detail page resolves an id as readily as a slug
+                    (`/api/v1/catalog/products/{idOrSlug}`), and the cart line carries the id,
+                    so the link needs nothing new from the server. Opening in a new tab keeps
+                    the cart, and the quantities the reader has just set, exactly where it is. */}
+                <p className="min-w-0 max-w-full font-medium text-content">
+                  <NewTabLink
+                    to={`/products/${line.productId}`}
+                    label={line.name}
+                    // No hover styling here: the line already reads as a title and the
+                    // external-link icon carries the affordance on its own.
+                    className="max-w-full hover:no-underline"
+                  />
+                </p>
                 <p className="text-xs text-content-muted">SKU {line.sku}</p>
 
                 {line.quantityWasClamped && (
@@ -154,30 +168,16 @@ export const CartPage = () => {
                 )}
               </div>
 
-              <div className="flex items-center gap-1" role="group" aria-label={`Quantity for ${line.name}`}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  aria-label={`Decrease quantity of ${line.name}`}
-                  onClick={() => void updateQuantity(line.productId, line.quantity - 1)}
-                >
-                  <Minus className="size-4" aria-hidden="true" />
-                </Button>
-
-                <span aria-live="polite" className="w-10 text-center text-sm font-medium text-content">
-                  {line.quantity}
-                </span>
-
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={line.quantity >= line.availableStock}
-                  aria-label={`Increase quantity of ${line.name}`}
-                  onClick={() => void updateQuantity(line.productId, line.quantity + 1)}
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                </Button>
-              </div>
+              <QuantityStepper
+                value={line.quantity}
+                onChange={(quantity) => void updateQuantity(line.productId, quantity)}
+                // A line already in the cart can be taken down to zero, which removes it.
+                min={0}
+                max={line.availableStock}
+                label={`Quantity for ${line.name}`}
+                decreaseLabel={`Decrease quantity of ${line.name}`}
+                increaseLabel={`Increase quantity of ${line.name}`}
+              />
 
               <p className="w-24 text-right font-semibold text-content">
                 {formatCurrency(line.lineTotal, cart.currencyCode)}

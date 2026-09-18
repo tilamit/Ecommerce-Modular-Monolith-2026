@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { fetchUsers, userLabel, type UserListItem } from '../api';
-import { Input, Select } from '../../../shared/components/ui/Field';
+import { Input } from '../../../shared/components/ui/Field';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { cn } from '../../../shared/lib/cn';
 
@@ -38,9 +38,17 @@ export const UserPicker = ({
   selected = null,
   variant = 'form',
 }: UserPickerProps) => {
-  const [search, setSearch] = useState('');
-  const term = useDebounce(search.trim(), 300);
+  // `form` types into the field itself, so the box starts showing whoever is already chosen.
+  // The dialog keeps this mounted between openings, so the caller remounts it with a `key`
+  // when the row it was opened from changes rather than this syncing itself to a prop.
+  const [search, setSearch] = useState(variant === 'form' && selected !== null ? userLabel(selected) : '');
+  const selectedLabel = selected !== null ? userLabel(selected) : null;
+  // Holding the chosen user's own label is not a search for them: the endpoint matches a name
+  // or an email, so sending "Name (email)" would match nothing and empty the list under the
+  // box the moment a choice was made.
+  const term = useDebounce(search.trim() === selectedLabel ? '' : search.trim(), 300);
   const selectId = useId();
+  const listId = useId();
 
   const query = useQuery({
     queryKey: ['admin', 'users', 'picker', term],
@@ -104,29 +112,47 @@ export const UserPicker = ({
     );
   }
 
+  // One field rather than a search box above a select: the box is the search, and the
+  // suggestions under it are the choices. `list` makes it a combobox, which the browser
+  // filters as you type on top of the server-side narrowing.
+  const byLabel = (text: string) => options.find((user) => userLabel(user) === text) ?? null;
+
+  const nothingMatches =
+    value === '' && search.trim() !== '' && !query.isPending && options.length === 0;
+
   return (
-    <div className="flex flex-col gap-3">
+    <>
       <Input
-        label="Find a user"
-        type="search"
-        placeholder="Name or email"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-      />
-      <Select
         label={label}
         required
-        value={value}
-        onChange={(event) => choose(event.target.value)}
+        type="search"
+        list={listId}
+        // The browser's own saved-values dropdown would compete with the suggestions.
+        autoComplete="off"
+        placeholder="Search by name or email"
+        value={search}
+        onChange={(event) => {
+          const text = event.target.value;
+          const picked = byLabel(text);
+
+          setSearch(text);
+          onChange(picked);
+        }}
         error={query.isError ? 'Users could not be loaded.' : undefined}
         hint={
-          query.data !== undefined && query.data.totalCount > PICKER_PAGE_SIZE
-            ? `Showing the first ${PICKER_PAGE_SIZE} matches. Search to narrow the list.`
-            : undefined
+          nothingMatches
+            ? 'No user matches that name or email.'
+            : query.data !== undefined && query.data.totalCount > PICKER_PAGE_SIZE
+              ? `Showing the first ${PICKER_PAGE_SIZE} matches. Keep typing to narrow them.`
+              : undefined
         }
-      >
-        {choices}
-      </Select>
-    </div>
+      />
+
+      <datalist id={listId}>
+        {options.map((user) => (
+          <option key={user.id} value={userLabel(user)} />
+        ))}
+      </datalist>
+    </>
   );
 };

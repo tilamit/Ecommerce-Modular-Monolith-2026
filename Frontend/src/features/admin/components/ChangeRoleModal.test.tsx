@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChangeRoleModal } from './ChangeRoleModal';
@@ -69,6 +69,12 @@ const renderModal = (initial: UserListItem | null) => {
   return { onSaved };
 };
 
+/** The suggestions live in a `datalist`, which jsdom renders but does not open. */
+const suggestions = () =>
+  [...document.querySelectorAll('datalist option')].map((option) => option.getAttribute('value'));
+
+const userField = () => screen.getByLabelText(/^user/i);
+
 describe('ChangeRoleModal', () => {
   beforeEach(() => {
     vi.mocked(fetchUsers).mockResolvedValue(paged([alan, grace]));
@@ -76,27 +82,33 @@ describe('ChangeRoleModal', () => {
     vi.mocked(setUserRoles).mockReset().mockResolvedValue(undefined);
   });
 
-  it('names users by full name and email and preselects the role the user holds', async () => {
+  it('suggests users by full name and email and preselects the role the user holds', async () => {
     renderModal(grace);
 
-    await screen.findByRole('option', { name: 'Alan Turing (alan@example.com)' });
-    const userSelect = screen.getByRole('combobox', { name: /^user/i });
-    const options = within(userSelect).getAllByRole('option').map((option) => option.textContent);
+    // The preselected user is in the list before the query resolves, so waiting on "any
+    // suggestion" would pass too early and assert against a list of one.
+    await waitFor(() => expect(suggestions()).toContain('Alan Turing (alan@example.com)'));
 
-    expect(options).toContain('Grace Hopper (grace@example.com)');
-    expect(options).toContain('Alan Turing (alan@example.com)');
-    expect(userSelect).toHaveValue('u-grace');
+    expect(suggestions()).toContain('Grace Hopper (grace@example.com)');
+    expect(suggestions()).toContain('Alan Turing (alan@example.com)');
+    // The one field now carries the choice, rather than a select below a search box.
+    expect(userField()).toHaveValue('Grace Hopper (grace@example.com)');
 
     await waitFor(() => expect(screen.getByRole('combobox', { name: /^role/i })).toHaveValue('r-customer'));
     expect(screen.getByRole('button', { name: 'Save role' })).toBeDisabled();
   });
 
-  it('saves the chosen role for the chosen user', async () => {
+  it('saves the chosen role for the user picked from the suggestions', async () => {
     const { onSaved } = renderModal(null);
     const actor = userEvent.setup();
 
-    await screen.findByRole('option', { name: 'Alan Turing (alan@example.com)' });
-    await actor.selectOptions(screen.getByRole('combobox', { name: /^user/i }), 'u-alan');
+    await waitFor(() => expect(suggestions()).toContain('Alan Turing (alan@example.com)'));
+
+    // Choosing a suggestion sets the field to that option's value in one go, which is what
+    // pasting reproduces. jsdom cannot open the browser's own suggestion list.
+    await actor.click(userField());
+    await actor.paste('Alan Turing (alan@example.com)');
+
     await waitFor(() => expect(screen.getByRole('combobox', { name: /^role/i })).toHaveValue('r-customer'));
 
     await actor.selectOptions(screen.getByRole('combobox', { name: /^role/i }), 'r-admin');
@@ -104,5 +116,16 @@ describe('ChangeRoleModal', () => {
 
     await waitFor(() => expect(setUserRoles).toHaveBeenCalledWith('u-alan', ['r-admin']));
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('says so when nothing matches what was typed', async () => {
+    vi.mocked(fetchUsers).mockResolvedValue(paged<UserListItem>([]));
+    renderModal(null);
+    const actor = userEvent.setup();
+
+    await actor.click(userField());
+    await actor.paste('nobody@example.com');
+
+    expect(await screen.findByText('No user matches that name or email.')).toBeInTheDocument();
   });
 });

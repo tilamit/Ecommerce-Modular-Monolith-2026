@@ -6,6 +6,7 @@ import { fetchProduct } from '../api';
 import { useCartStore } from '../../cart';
 import { useToast } from '../../../shared/components/ui/Toast';
 import { Button } from '../../../shared/components/ui/Button';
+import { QuantityStepper } from '../../../shared/components/ui/QuantityStepper';
 import { ErrorState, Skeleton } from '../../../shared/components/ui/States';
 import { ApiError } from '../../../shared/api/httpClient';
 import { discountPercent, formatCurrency } from '../../../shared/lib/format';
@@ -13,6 +14,7 @@ import { discountPercent, formatCurrency } from '../../../shared/lib/format';
 export const ProductDetailPage = () => {
   const { slug = '' } = useParams();
   const [activeImage, setActiveImage] = useState(0);
+  const [quantity, setQuantity] = useState(1);
   const addToCart = useCartStore((state) => state.add);
   const removeFromCart = useCartStore((state) => state.remove);
   const { show } = useToast();
@@ -58,6 +60,12 @@ export const ProductDetailPage = () => {
   const discount = discountPercent(product.price, product.compareAtPrice);
   const isOutOfStock = product.stockQuantity <= 0;
   const images = product.images.length > 0 ? product.images : [];
+
+  // This component stays mounted when the reader follows a link to another product, so the
+  // quantity it holds can outlive the stock it was picked against. Clamping on the way out
+  // beats an effect that resets it: there is no render where the number on screen and the
+  // number that would be added disagree.
+  const selectedQuantity = Math.min(quantity, Math.max(product.stockQuantity, 1));
 
   return (
     <div className="flex flex-col gap-6">
@@ -148,16 +156,46 @@ export const ProductDetailPage = () => {
             <p className="text-sm text-content-muted">{product.shortDescription}</p>
           )}
 
+          {!isOutOfStock && (
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Visible label for sighted readers; the group carries its own accessible
+                  name, which names the product too. */}
+              <span aria-hidden="true" className="text-sm font-medium text-content">
+                Quantity
+              </span>
+
+              <QuantityStepper
+                size="md"
+                value={selectedQuantity}
+                onChange={setQuantity}
+                max={product.stockQuantity}
+                label={`Quantity for ${product.name}`}
+              />
+
+              {selectedQuantity >= product.stockQuantity && (
+                <span role="status" className="text-xs text-content-muted">
+                  That is all we have in stock.
+                </span>
+              )}
+            </div>
+          )}
+
           <Button
             size="lg"
             disabled={isOutOfStock}
             onClick={() => {
-              addToCart(product.id, 1);
+              addToCart(product.id, selectedQuantity);
               show({
                 tone: 'success',
-                message: `${product.name} added to your cart.`,
+                message:
+                  selectedQuantity === 1
+                    ? `${product.name} added to your cart.`
+                    : `${selectedQuantity} × ${product.name} added to your cart.`,
                 action: { label: 'Undo', onClick: () => removeFromCart(product.id) },
               });
+              // The store adds to what is already there, so leaving the stepper at 3 would
+              // make an absent-minded second click a six-item order.
+              setQuantity(1);
             }}
             leadingIcon={<ShoppingCart className="size-5" aria-hidden="true" />}
             className="self-start"

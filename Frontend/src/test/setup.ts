@@ -6,7 +6,7 @@ import { cleanup } from '@testing-library/react';
  * In-memory `localStorage` for the test environment.
  *
  * VERIFIED at install time: jsdom 30 does provide `localStorage` when constructed with a
- * non-opaque URL - `new JSDOM(html, { url: 'http://localhost:5173/' }).window.localStorage`
+ * non-opaque URL - `new JSDOM(html, { url: 'https://localhost:5173/' }).window.localStorage`
  * is an object. But Vitest 4's jsdom environment does not surface it on the test global,
  * even with `environmentOptions.jsdom.url` set. So it is supplied here rather than assumed.
  *

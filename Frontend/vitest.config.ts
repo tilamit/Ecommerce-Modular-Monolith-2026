@@ -9,10 +9,10 @@ export default defineConfig({
     environment: 'jsdom',
     environmentOptions: {
       // jsdom refuses to expose localStorage on an opaque origin and its default document
-      // URL is about:blank. Without an explicit http URL, `localStorage` is simply absent -
+      // URL is about:blank. Without an explicit URL, `localStorage` is simply absent -
       // which would make the cart-expiry tests fail for a reason that has nothing to do
-      // with the cart.
-      jsdom: { url: 'http://localhost:5173/' },
+      // with the cart. The scheme matches the dev server, which serves over HTTPS.
+      jsdom: { url: 'https://localhost:5173/' },
     },
     globals: true,
     setupFiles: ['./src/test/setup.ts'],

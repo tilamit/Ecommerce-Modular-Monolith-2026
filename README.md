@@ -1,14 +1,8 @@
 # ShopHub
 
-A .NET 10 **modular monolith** e-commerce application with a React 19 single-page frontend.
-One process, one deployable, one SQL Server database - split into four modules whose
-boundaries are enforced by the compiler and by tests rather than by convention.
+A .NET 10 **modular monolith** e-commerce application with a React 19 single-page frontend. One process, one deployable, one SQL Server database, split into four modules whose boundaries are enforced by the compiler and by tests rather than by convention.
 
-A solution with folders named "Modules" that freely reference each other is a layered
-monolith with extra steps. In ShopHub a module can only be reached through its `Contracts`
-project, every `DbContext` is `internal` to its own module and owns its own database schema
-and 52 architecture tests fail the build the moment any of that stops being true. The
-frontend applies the same rule to its feature folders.
+A solution with folders named "Modules" that freely reference each other is a layered monolith with extra steps. In ShopHub a module can only be reached through its `Contracts` project, every `DbContext` is `internal` to its own module and owns its own database schema and 52 architecture tests fail the build the moment any of that stops being true. The frontend applies the same rule to its feature folders.
 
 ```
    Identity            Catalog             Ordering            Auditing
@@ -111,7 +105,7 @@ Captured against the seeded Development data. The files live in
 
 ### Storefront
 
-Anonymous browsing: the product grid with the category, price and stock filters, and a
+Anonymous browsing: the product grid with the category, price and stock filters and a
 product page. Every filter is in the URL, so the view in the first image is shareable as it
 stands.
 
@@ -301,7 +295,7 @@ search, sorting and paging. With `identity.users.manage` each row has **Change r
 
 **Changing a user's role**
 
-1. Open **Change role** from a user's row, which preselects that user, or from the toolbar.
+1. Open **Change role** from a user's row, which preselects that user or from the toolbar.
 2. Choose the **User** from a dropdown that names every user by full name and email, for
    example `Grace Hopper (grace@example.com)`. The search box above it narrows the list by
    name or email.
@@ -1017,9 +1011,9 @@ same permission on the server, which is what actually refuses a request.
 
 Both halves of the application speak TLS, in development as well as in production. This
 matters more here than in a typical SPA, because two of the security decisions above assume
-a secure origin: the access token lives **in memory only**, and the refresh token travels in
+a secure origin: the access token lives **in memory only** and the refresh token travels in
 a `Secure; HttpOnly` cookie. An origin that is not TLS is a different arrangement from the
-deployed one, and testing the wrong one is the usual way a cookie flag is discovered to be
+deployed one and testing the wrong one is the usual way a cookie flag is discovered to be
 broken after release.
 
 ### Both ends run on TLS
@@ -1037,7 +1031,7 @@ the browser same-site with it and is what lets the refresh cookie travel normall
 
 Serving TLS from Vite is one config field. Serving TLS the **browser accepts** is the part
 worth explaining, because the obvious answer is the wrong one: a freshly generated
-self-signed certificate puts a warning interstitial in front of every session, and a warning
+self-signed certificate puts a warning interstitial in front of every session and a warning
 that developers train themselves to click through is a security control switched off by hand.
 
 So the SPA does not generate a certificate. It reuses the ASP.NET development certificate the
@@ -1052,7 +1046,7 @@ Node does not read the Windows certificate store, so the store copy is invisible
    (`~/.aspnet/https` on Linux and macOS), the folder the .NET SPA templates use. Keeping the
    private key outside the working tree means there is no `.gitignore` entry that has to be
    right for it to stay unpublished.
-2. If either file is missing, unreadable, or outside its validity window when parsed with
+2. If either file is missing, unreadable or outside its validity window when parsed with
    `node:crypto`'s `X509Certificate`, it re-exports the pair with
    `dotnet dev-certs https --export-path … --format Pem --no-password`. The development
    certificate is valid for a year, so checking the dates rather than only the filenames is
@@ -1065,14 +1059,14 @@ already run the API produces a trusted origin on the first run.
 
 ### Why the proxy still sets `secure: false`
 
-The dev-server proxy keeps this, and it is easy to misread now that both ends share a
+The dev-server proxy keeps this and it is easy to misread now that both ends share a
 certificate:
 
 ```ts
 proxy: { '/api': { target: 'https://localhost:7003', changeOrigin: false, secure: false } }
 ```
 
-That flag governs how **Node** treats the API's certificate on the hop it makes itself, and
+That flag governs how **Node** treats the API's certificate on the hop it makes itself and
 Node still does not consult the Windows trusted root store. Without it the proxy rejects the
 upstream handshake and every `/api` call fails with a TLS error, on a machine where the
 browser considers the very same certificate perfectly valid. It says nothing about the
@@ -1101,7 +1095,7 @@ certificate the browser sees.
   the browser.
 
 There is no `UseHttpsRedirection` in the pipeline. Nothing listens on plain HTTP to redirect
-from, and in a deployment TLS termination belongs to whatever sits in front of Kestrel.
+from and in a deployment TLS termination belongs to whatever sits in front of Kestrel.
 
 ### If the certificate is missing
 
@@ -1354,7 +1348,7 @@ Adding a module such as `Shipping` follows the same shape as the existing four:
    `RegisterModule` and its route group in `MapEndpoints`.
 3. Give it an `internal` `ShippingDbContext` mapped to a `shipping` schema, with its own
    migrations history table `__EFMigrationsHistory_shipping`.
-4. Expose what other modules need through `IShippingModuleApi` in the Contracts project, and
+4. Expose what other modules need through `IShippingModuleApi` in the Contracts project and
    consume other modules only through theirs or through integration events.
 5. Add `new ShippingModule()` to the module list in `Program.cs`.
 6. Register it in `tests/ShopHub.ArchitectureTests/ModuleCatalog.cs` so every boundary rule
